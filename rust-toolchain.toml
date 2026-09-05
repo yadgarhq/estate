@@ -1,0 +1,10 @@
+[toolchain]
+# Aligned with the estate's other repositories and with the `rust-build` base
+# image (D63). A repository that pins an older channel makes rustup fetch a
+# second toolchain and recompile everything with it.
+#
+# NO `targets` LINE, unlike the service repositories. Those cross-compile to
+# `x86_64-unknown-linux-musl` for a distroless image; this repository ships no
+# image and builds only for the runner it executes on.
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]
