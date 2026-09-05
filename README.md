@@ -43,9 +43,9 @@ the assembled system behaves as the decisions say it does.
 Stated here rather than left to be inferred.
 
 - **The suite cannot run yet.** It needs three things this repository cannot do
-  to itself: the `estate-front` ARC runner, the CoreDNS rewrite and stable edge
-  Service, and the identity ceremony that writes `ESTATE_PASSWORD`. All three are
-  in `MIGRATION_NOTES.md`. Until they exist `smoke.yaml` has no runner and no
+  to itself: the `estate-front` ARC runner and the stable edge address it dials,
+  both declared in `yadgarhq/deploy`, and the identity ceremony that writes
+  `ESTATE_PASSWORD`. All of it is in `MIGRATION_NOTES.md`. Until they exist `smoke.yaml` has no runner and no
   credential, and a dispatched run QUEUES rather than failing — which is easy to
   mistake for a passing one.
 - **Nothing sends `module-rolled` yet.** This repository's half of the trigger is
@@ -55,8 +55,9 @@ Stated here rather than left to be inferred.
   `await-roll` prints on the run itself that the verdict may describe the
   previous pods. Stage 3's A-04 replaces that sentence with digest parity for all
   five.
-- **C-18 is red.** kindnet enforces no NetworkPolicy, so `runners/`'s policy is
-  the specification the row tests rather than something applied. The red carries
+- **C-18 is red.** kindnet enforces no NetworkPolicy, so the policy in
+  `yadgarhq/deploy`'s `infra/estate-front/` is the specification the row tests
+  rather than something applied. The red carries
   a dated task and the row's own output names it.
 - **This repository is not yet visible to the auditor.** `PROTO_VERSION` is what
   makes a repository a consumer the auditor sees, and it is deliberately absent:
@@ -121,13 +122,12 @@ way. There is no way to turn validation off, deliberately.
 
 ## Layout
 
-| Path                   | What                                                                  |
-| ---------------------- | --------------------------------------------------------------------- |
-| `crates/harness`       | One TLS trust path, byte-level capture, the MCP envelope, the run key |
-| `crates/front`         | The contracts, and `await-roll`                                       |
-| `reference.toml`       | Every declared observable constant the rows assert against            |
-| `ca/root.pem`          | The name-constrained root, public material, committed                 |
-| `runners/estate-front` | The ARC values and the NetworkPolicy C-18 tests                       |
-| `scripts/enrol.sh`     | The identity ceremony's second half                                   |
-| `UNOBSERVED.md`        | What this suite does not observe, and why                             |
-| `MIGRATION_NOTES.md`   | Everything stage 1 needs that this repository cannot do to itself     |
+| Path                 | What                                                                  |
+| -------------------- | --------------------------------------------------------------------- |
+| `crates/harness`     | One TLS trust path, byte-level capture, the MCP envelope, the run key |
+| `crates/front`       | The contracts, and `await-roll`                                       |
+| `reference.toml`     | Every declared observable constant the rows assert against            |
+| `ca/root.pem`        | The name-constrained root, public material, committed                 |
+| `scripts/enrol.sh`   | The identity ceremony's second half                                   |
+| `UNOBSERVED.md`      | What this suite does not observe, and why                             |
+| `MIGRATION_NOTES.md` | Everything stage 1 needs that this repository cannot do to itself     |

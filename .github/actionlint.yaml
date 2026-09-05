@@ -9,8 +9,31 @@
 # a typo in `smoke.yaml`'s `runs-on:` still fails, because the typo will not be
 # in this list either.
 #
-# `estate-front` is the `runnerScaleSetName` in runners/estate-front/values.yaml.
+# `estate-front` is the `runnerScaleSetName` in `yadgarhq/deploy`'s
+# infra/estate-front-runner.yaml.
 # The two must agree, and neither reports it if they do not.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# `estate-front` IS VALID HERE AND FORBIDDEN IN TWO WORKFLOWS. ADR-0563.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# `smoke.yaml` is the ONLY workflow that may name this label. Stage 4's
+# `adopt.yaml` and `sweep.yaml` MUST declare `runs-on: ubuntu-latest` instead.
+#
+# The reason is the credential, not tidiness. Those two mint installation tokens
+# from the `yadgarhq-bot` App, which is installed organisation-wide with write
+# across every repository in the estate — `contents`, `pull_requests`,
+# `workflows`, `issues` and `administration`, measured 2026-09-05. The
+# `estate-front` runner is a stated attack surface whose NetworkPolicy today
+# enforces nothing, because kindnet evaluates none. A job there that holds that
+# key makes the auditor the softest way into every repository the auditor exists
+# to protect. ADR-0563: a workflow that reads the App's private key runs on a
+# GitHub-hosted runner, and no job on a self-hosted runner ever receives it.
+#
+# THIS FILE CANNOT ENFORCE THAT. Declaring the label makes actionlint accept it
+# in ANY workflow in this repository, including the two that must never use it.
+# The warning is here because this list is what a person greps when they are
+# deciding what to write in `runs-on:`. It is also in MIGRATION_NOTES.md item 7.
 self-hosted-runner:
   labels:
     - estate-front

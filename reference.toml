@@ -23,7 +23,8 @@
 [edge]
 # The name a real client dials, and the only name this suite ever dials. TLS is
 # validated against `ca/root.pem` and nothing else; resolution may be redirected
-# (a CoreDNS rewrite in-cluster, `ESTATE_EDGE_RESOLVE` locally) but trust never is.
+# (`hostAliases` on the runner pod in-cluster, `ESTATE_EDGE_RESOLVE` locally) but
+# trust never is.
 host = "gateway.yadgar.internal"
 port = 443
 # ADR-0490/0504: the leaf must chain to the committed name-constrained root, and
@@ -79,7 +80,8 @@ connect_timeout_ms = 3000
 
 # C-18 IS RED AT BIRTH AND THE RED CARRIES A DEADLINE. kindnet enforces no
 # NetworkPolicy (verified: the `kindnet` DaemonSet is the cluster's CNI), so the
-# policies in `runners/` are the specification C-18 tests rather than something
+# policy in `yadgarhq/deploy`'s `infra/estate-front/` is the specification C-18
+# tests rather than something
 # the network applies. An indefinite red is the "recorded state" ADR-0561
 # forbids one level down, and it is what trains people to ignore red — so the
 # failure output names the task that will clear it and the date it should have.

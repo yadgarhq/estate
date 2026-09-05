@@ -37,12 +37,19 @@ fn builder(reference: &Reference) -> Result<reqwest::ClientBuilder> {
 
     // Resolution may be redirected; trust never is.
     //
-    // IN-CLUSTER THIS WILL BE A CoreDNS REWRITE, WHICH DOES NOT EXIST YET.
-    // Verified 2026-09-05: no ConfigMap in the cluster carries a rewrite for
-    // `gateway.yadgar.internal`. It is MIGRATION_NOTES.md item 1, a PREREQUISITE
-    // rather than a description of today — until it is applied nothing running
-    // in the cluster resolves the name, and `smoke.yaml` fails at DNS rather
-    // than at a contract. Once it exists nothing is set here.
+    // IN-CLUSTER NOTHING IS SET HERE. The runner pod resolves the name through a
+    // `hostAliases` entry pointing at `yadgar-edge`, a stable Service on a pinned
+    // ClusterIP in front of the same Envoy pods. Both are declared in
+    // `yadgarhq/deploy` (`infra/estate-front/edge-service.yaml` and
+    // `infra/estate-front-runner.yaml`), because applying them is a cluster
+    // change and this repository applies nothing.
+    //
+    // NOT A CoreDNS REWRITE, which is what the design named. Verified 2026-09-05:
+    // `kube-system/coredns`'s Corefile carries no `rewrite` line, and none is
+    // being added — that ConfigMap is written by kubeadm when kind creates the
+    // cluster, so an Argo-managed copy would be two writers of one object
+    // (ADR-0480). The consequence worth knowing is that the name resolves in the
+    // runner pod and nowhere else in the cluster.
     //
     // From a workstation the name has no DNS record either, so the address is
     // supplied — the client still dials the external NAME, sends it as SNI, and

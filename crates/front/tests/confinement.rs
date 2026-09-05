@@ -1,9 +1,10 @@
 //! C-18 — the front-door runner's confinement (ADR-0562, self).
 //!
 //! **THIS ROW IS RED AT BIRTH AND THE RED IS THE HONEST ALARM.** The cluster's
-//! CNI is kindnet, which enforces no NetworkPolicy. The policies in `runners/`
-//! are therefore the SPECIFICATION this row tests rather than something the
-//! network applies, and until the CNI changes this row fails. That is correct
+//! CNI is kindnet, which enforces no NetworkPolicy. The policy in
+//! `yadgarhq/deploy` (`infra/estate-front/networkpolicy.yaml`) is therefore the
+//! SPECIFICATION this row tests rather than something the network applies, and
+//! until the CNI changes this row fails. That is correct
 //! behaviour for a suite whose purpose is to say what is true.
 //!
 //! **THE RED CARRIES A DEADLINE, AND THAT IS NOT DECORATION.** ADR-0561's own
@@ -97,8 +98,9 @@ fn red_at_birth_message(reference: &Reference, reachable: &[String]) -> String {
          \"Through the front door\" is not enforced by the network, so any suite bug or \
          compromised test dependency can bypass the edge while every other row reports green.\n\
          \n\
-         EXPECTED UNTIL THE CNI CHANGES. kindnet enforces no NetworkPolicy, so the policies in \
-         runners/ are the specification this row tests rather than something applied.\n\
+         EXPECTED UNTIL THE CNI CHANGES. kindnet enforces no NetworkPolicy, so the policy in \
+         yadgarhq/deploy's infra/estate-front/ is the specification this row tests rather than \
+         something applied.\n\
          \n\
          CLEARED BY: {} — {}\n\
          DUE:        {}\n\
