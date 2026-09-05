@@ -1,0 +1,115 @@
+name: smoke
+
+# THE VERDICT AFTER EVERY ROLL. Ten rows, under a minute, run on the
+# `estate-front` runner inside the cluster so that the traffic reaches the edge
+# the way a real client's does.
+#
+# NEVER `pull_request`. A fork pull request executes attacker-chosen workflow
+# code, and this workflow runs on a self-hosted runner inside the cluster,
+# holding the runner's registration token, the `estate` environment gate, and —
+# until the CNI changes and C-18 goes green — line of sight to every service.
+# Three controls, and this trigger list is the first: `repository_dispatch`
+# (`module-rolled`) and `workflow_dispatch`, and nothing else — the two the `on:`
+# block below declares. The second control is the runner group, restricted to
+# this repository. The third is that the `estate` environment is named by the
+# suite workflows and by nothing else.
+on:
+  repository_dispatch:
+    types: [module-rolled]
+  workflow_dispatch:
+    inputs:
+      module:
+        description: "The module that was rolled, if any. `gateway` can be confirmed from the front door; the other four cannot."
+        type: string
+        required: false
+        default: ""
+      tag:
+        description: "The release tag that was rolled, e.g. v0.8.13."
+        type: string
+        required: false
+        default: ""
+
+# Rolls arrive back to back. Queue rather than cancel: a cancelled smoke run is
+# a roll with no verdict, which is the thing this workflow exists to prevent.
+concurrency:
+  group: estate-smoke
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    # THE SCALE SET'S NAME IS THE LABEL. `estate-front` egresses only to kube-dns,
+    # the edge, and GitHub — see runners/estate-front/. Until ARC is installed
+    # this job has no runner and the run queues; that is stated in the README
+    # rather than hidden.
+    runs-on: estate-front
+    # WHERE `ESTATE_PASSWORD` LIVES, and it must NOT require reviewers. Smoke
+    # runs on `module-rolled`, and the promise is a verdict within minutes of
+    # every roll — a reviewer-gated environment turns every roll into a job
+    # waiting on a human. The control is WHICH WORKFLOWS may name the
+    # environment, not a human approving each run.
+    environment: estate
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+
+      # THROUGH THE ENVIRONMENT, NEVER INTERPOLATED INTO THE SCRIPT.
+      # `client_payload` is written by whoever sent the dispatch, and `${{ }}`
+      # inside a `run:` block is a shell injection — the class zizmor audits for.
+      # Every value below is read as `$VAR` by a program that treats it as data.
+      - name: wait for the rolled code, or say it could not be confirmed
+        env:
+          ESTATE_ROLLED_MODULE: ${{ github.event.client_payload.module || inputs.module }}
+          ESTATE_ROLLED_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+        run: cargo run --locked --bin await-roll
+
+      # THE NINE ROWS. C-18 is not here; see the step below.
+      #
+      # `--ignored` is what runs them: every row is `#[ignore]` so the estate's
+      # shared CI, which has no route to this cluster and no credential, does not
+      # fail on the environment. `cargo test` still prints them as ignored there,
+      # so the subset is visible rather than invisible.
+      - name: the front-door contracts
+        env:
+          ESTATE_PASSWORD: ${{ secrets.ESTATE_PASSWORD }}
+          ESTATE_PASSWORD_2: ${{ secrets.ESTATE_PASSWORD_2 }}
+        run: cargo test --locked --test smoke -- --ignored --nocapture
+
+      # C-18 REPORTS AS ITS OWN NAMED CHECK, and this step is that separation.
+      #
+      # It is RED AT BIRTH: kindnet enforces no NetworkPolicy, so the policies in
+      # runners/ are the specification this row tests rather than something
+      # applied. Folding a standing red into the verdict of nine rows that are
+      # not red by design would teach everyone to ignore the verdict.
+      #
+      # `continue-on-error` IS THE COMPROMISE, NOT THE MITIGATION. The row's own
+      # failure output names the dated task that will clear it, and that deadline
+      # is the half worth defending — a gap with a date is a task, an indefinite
+      # red is the recorded state ADR-0561 forbids. This step goes away at
+      # stage 5, when the CNI change lands and the row goes green.
+      - name: C-18 confinement (red until the CNI change lands)
+        id: confinement
+        continue-on-error: true
+        run: cargo test --locked --test confinement -- --ignored --nocapture
+
+      - name: say what C-18 answered, on the run
+        env:
+          OUTCOME: ${{ steps.confinement.outcome }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### C-18 — front-door confinement"
+            echo ""
+            echo "Outcome: \`$OUTCOME\`."
+            echo ""
+            echo "Red is expected until the CNI change lands; the row's own output names the"
+            echo "dated task that clears it. See UNOBSERVED.md and reference.toml."
+          } >> "$GITHUB_STEP_SUMMARY"

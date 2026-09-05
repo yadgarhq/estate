@@ -1,0 +1,46 @@
+# Every yadgarhq repo carries pre-commit (D59). Hook failure is signal, not
+# obstacle: fix the cause and re-stage. Never --no-verify.
+#
+# TWO HOOKS THE OTHER REPOSITORIES DECLARE ARE ABSENT HERE, and the absence is
+# the honest form rather than a gap. `hadolint` matches Containerfiles and
+# `helm-lint` matches `chart/`; this repository ships neither, because it builds
+# no image and deploys no chart — it is a test client. Declaring a hook that
+# matches no file is a hook that reports Passed having read nothing, which is the
+# same "a check that looks real without being one" this estate keeps refusing.
+# They come back the day this repository grows the thing they check.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: check-yaml
+        # Kubernetes manifests are multi-document by convention — a Namespace and
+        # the policy that governs it belong in one file, read by one `kubectl
+        # apply`. This is a parser setting, not an exemption: every document is
+        # still checked. Without it the hook rejects `---` and the repository
+        # would be pushed towards splitting manifests to satisfy a linter.
+        args: [--allow-multiple-documents]
+      - id: check-toml
+
+  # Shared, from yadgarhq/actions (D62). IMMUTABLE rev: pre-commit caches a rev
+  # at first install and never re-resolves it, so a moving tag would silently
+  # freeze each machine at whatever it meant the day it first ran.
+  - repo: https://github.com/yadgarhq/actions
+    rev: v1.5.0
+    hooks:
+      - id: gitleaks
+      - id: prettier
+      - id: cargo-fmt
+      - id: cargo-clippy
+      - id: cargo-deny
+      # KEPT, and it is expected to find nothing. This repository serves no
+      # gRPC and registers no router, so the hook's handler set is empty and it
+      # passes by having nothing to check rather than by being switched off.
+      # Keeping it is what makes that true tomorrow as well: the day this
+      # repository grows a handler, the hook is already watching it.
+      - id: observe-coverage

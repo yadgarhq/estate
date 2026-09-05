@@ -1,0 +1,18 @@
+[package]
+name = "estate-front"
+description = "The behavioural contracts exercised through the front door, as a real client sees it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+estate-harness.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[[bin]]
+name = "await-roll"
+path = "src/bin/await_roll.rs"

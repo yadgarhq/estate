@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+# `estate-annex` is deliberately absent. It is stage 3, and it is the crate that
+# vendors the wire contract — so `PROTO_VERSION` and `proto/` arrive with it
+# rather than now. See README, "What this repository is not yet".
+members = ["crates/harness", "crates/front"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# THE CLIENT IS RUST, AND THAT FOLLOWS FROM WHAT IT MUST MIRROR (ADR-0505). The
+# client people actually run is `yaadgaar`, a Rust binary shipped as a maturin
+# `bin` wheel; the Python `yadgar` package is the superseded one. A Python suite
+# would mirror the legacy client rather than the system.
+#
+# `rustls-tls-webpki-roots`, NOT `-native-roots`, and the choice is load-bearing
+# for C-14. That row's negative half asserts the edge certificate does NOT
+# validate against the public web PKI. The DEVELOPER'S system trust store
+# contains the yadgar development root — NixOS installs it there deliberately —
+# so a native-roots client would succeed locally and fail in a container, making
+# the row's verdict depend on where it ran. The Mozilla bundle is the same set
+# everywhere.
+#
+# `default-features = false` drops the default TLS backend so exactly one is
+# linked; `http2` is re-declared because it is a default feature and C-16 (stage
+# 2) will assert the negotiated protocol is `h2`.
+reqwest = { version = "0.12", default-features = false, features = [
+  "charset",
+  "http2",
+  "json",
+  "rustls-tls-webpki-roots",
+] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+anyhow = "1"
+rand = "0.9"
+
+estate-harness = { path = "crates/harness" }

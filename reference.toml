@@ -1,0 +1,88 @@
+# The observable constants the contract suite asserts against.
+#
+# WHY THIS FILE EXISTS. A deployment-tuning change — a bucket size, a response
+# floor, a new infrastructure header at the edge — is a change to what this
+# suite must expect. If those numbers lived as literals inside test code, the
+# person changing the deployment would never see them, and the suite would go
+# red for a reason that is not a defect. Declaring them here makes the update a
+# reviewed one-line pull request in this repository, and it puts the declaration
+# where the reviewer of the deployment change will be sent.
+#
+# EVERY VALUE HERE WAS MEASURED against the reference cluster on 2026-09-05, not
+# copied from a document. Where a value is a closed set, it is closed: a header
+# or a tool name outside the set fails the row, and admitting a new one is a
+# reviewed edit to this file rather than a silent loosening of an assertion.
+#
+# STAGE 1 ONLY. This file carries what the ten smoke rows read and nothing else.
+# The login response floor (C-15), the token-bucket rates (C-16/C-17), the closed
+# `outcome` label set (A-10) and the `yaadgaar` client pin (C-19) belong to the
+# stages that introduce those rows; adding them now would be declaring constants
+# nothing reads, which is how a declared constant drifts from the deployment
+# without anything noticing.
+
+[edge]
+# The name a real client dials, and the only name this suite ever dials. TLS is
+# validated against `ca/root.pem` and nothing else; resolution may be redirected
+# (a CoreDNS rewrite in-cluster, `ESTATE_EDGE_RESOLVE` locally) but trust never is.
+host = "gateway.yadgar.internal"
+port = 443
+# ADR-0490/0504: the leaf must chain to the committed name-constrained root, and
+# must NOT chain to the public web PKI. C-14 asserts both halves.
+root_pem = "ca/root.pem"
+
+[mcp]
+# `gateway/src/mcp.rs:30`. The one revision this server implements.
+protocol_version = "2026-07-28"
+# `server/discover`'s `_meta` serverInfo name (measured).
+server_name = "yadgar-gateway"
+# Every MCP result carries this — `mcp::result` inserts it unconditionally.
+result_type = "complete"
+# C-06: CLOSED-SET EQUALITY over the whole tool surface, never an absence check
+# for known-bad names. A tool appearing without a deliberate edit here is the
+# review moment ADR-0562 exists to force; if the new name is administrative,
+# privilege escalation is one prompt injection away.
+tools = ["create_task", "read_task", "find_tasks"]
+
+[login]
+# C-02. The infrastructure-header allowlist, measured from a live failed login on
+# 2026-09-05: exactly `content-type`, `content-length`, `date`. A header outside
+# this set fails the row. `www-authenticate` is absent and its absence is the
+# assertion — ADR-0507's two-status collapse discloses nothing about which side
+# of verification failed, and a challenge header would disclose it.
+allowed_headers = ["content-type", "content-length", "date"]
+# Byte-exact, measured. Not a substring match: a test that only asserts "a
+# refusal happened" passes against the leaking version.
+refusal_body = '{"error":"invalid username or password"}'
+refusal_status = 401
+
+[confinement]
+# C-18. The front-door runner must not be able to open a connection to anything
+# inside the cluster; the edge is its only reachable surface.
+#
+# THESE ARE LIVE, RESOLVABLE ENDPOINTS, and that is a correctness condition
+# rather than tidiness. C-18 asserts that a connection FAILS, so a target whose
+# name does not resolve passes the row for free and can never fail — a vacuous
+# assertion that would report green forever. The row therefore resolves each name
+# first and fails with a distinct diagnostic if it does not resolve at all.
+#
+# Measured 2026-09-05 (`kubectl -n yadgar get svc`): `iam-db` and `task-db` serve
+# 50051, `iam` and `task` serve 50052, each `-db` has its own MariaDB Service in
+# the `yadgar` namespace, and `valkey` serves 6379. There is no
+# `mariadb.mariadb-system.svc`: that namespace holds only the operator webhook.
+targets = [
+  "iam-db.yadgar.svc.cluster.local:50051",
+  "task-db.yadgar.svc.cluster.local:50051",
+  "iam-db-mariadb.yadgar.svc.cluster.local:3306",
+  "valkey.yadgar.svc.cluster.local:6379",
+]
+connect_timeout_ms = 3000
+
+# C-18 IS RED AT BIRTH AND THE RED CARRIES A DEADLINE. kindnet enforces no
+# NetworkPolicy (verified: the `kindnet` DaemonSet is the cluster's CNI), so the
+# policies in `runners/` are the specification C-18 tests rather than something
+# the network applies. An indefinite red is the "recorded state" ADR-0561
+# forbids one level down, and it is what trains people to ignore red — so the
+# failure output names the task that will clear it and the date it should have.
+deadline_task = "yadgarhq/docs ledger 614"
+deadline_date = "2026-10-03"
+deadline_summary = "replace kindnet with a NetworkPolicy-enforcing CNI (nix repo, ADR-0480)"

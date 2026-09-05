@@ -1,0 +1,16 @@
+# The self-hosted runner labels this repository uses.
+#
+# actionlint knows GitHub's hosted labels and nothing else, so an undeclared
+# self-hosted label reads to it as a typo — which is the right default, because a
+# mistyped label is a job that queues forever against a runner that will never
+# appear, with no error anywhere.
+#
+# Declaring it here is what makes the check meaningful rather than switched off:
+# a typo in `smoke.yaml`'s `runs-on:` still fails, because the typo will not be
+# in this list either.
+#
+# `estate-front` is the `runnerScaleSetName` in runners/estate-front/values.yaml.
+# The two must agree, and neither reports it if they do not.
+self-hosted-runner:
+  labels:
+    - estate-front
