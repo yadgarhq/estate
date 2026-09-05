@@ -10,9 +10,16 @@ name: smoke
 # until the CNI changes and C-18 goes green — line of sight to every service.
 # Three controls, and this trigger list is the first: `repository_dispatch`
 # (`module-rolled`) and `workflow_dispatch`, and nothing else — the two the `on:`
-# block below declares. The second control is the runner group, restricted to
-# this repository. The third is that the `estate` environment is named by the
-# suite workflows and by nothing else.
+# block below declares, neither of which a fork can reach. The second control is
+# that the scale set is registered against THIS REPOSITORY rather than the
+# organisation, so no other repository's workflow can target it. The third is
+# that the `estate` environment is named by the suite workflows and by nothing
+# else, and a fork pull request cannot read environment secrets at all.
+#
+# The design also named an organisation runner group restricted to this
+# repository. There is no such group and there cannot be: `yadgarhq` is on the
+# free plan, where `Default` is the only group and custom groups are a Team or
+# Enterprise feature. The repository-scoped registration replaces it.
 on:
   repository_dispatch:
     types: [module-rolled]
@@ -41,7 +48,8 @@ permissions:
 jobs:
   smoke:
     # THE SCALE SET'S NAME IS THE LABEL. `estate-front` egresses only to kube-dns,
-    # the edge, and GitHub — see runners/estate-front/. Until ARC is installed
+    # the edge, and GitHub — see `infra/estate-front/` in `yadgarhq/deploy`.
+    # Until ARC is installed
     # this job has no runner and the run queues; that is stated in the README
     # rather than hidden.
     runs-on: estate-front
@@ -85,8 +93,8 @@ jobs:
 
       # C-18 REPORTS AS ITS OWN NAMED CHECK, and this step is that separation.
       #
-      # It is RED AT BIRTH: kindnet enforces no NetworkPolicy, so the policies in
-      # runners/ are the specification this row tests rather than something
+      # It is RED AT BIRTH: kindnet enforces no NetworkPolicy, so the policy in
+      # `yadgarhq/deploy` is the specification this row tests rather than something
       # applied. Folding a standing red into the verdict of nine rows that are
       # not red by design would teach everyone to ignore the verdict.
       #
