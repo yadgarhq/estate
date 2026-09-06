@@ -16,14 +16,24 @@
 use anyhow::{Context, Result};
 use estate_harness::{auth, client::Edge, reference::Reference, run};
 
-/// The standing identities, created once at stage 1 by the operator's ceremony.
+/// One suite identity: a name from `reference.toml`, a password from the
+/// environment.
 ///
-/// Overridable by environment so the ceremony can name them otherwise without a
-/// code change; the defaults are what `scripts/enrol.sh` creates.
-pub const DEFAULT_USERNAME: &str = "estate-suite";
-pub const DEFAULT_USERNAME_2: &str = "estate-suite-2";
-
-/// One suite identity, resolved from the environment.
+/// **THE NAME NO LONGER HAS A COMPILED-IN DEFAULT (ADR-0569, ledger 716).** It
+/// used to: `DEFAULT_USERNAME = "estate-suite"` sat here behind an
+/// `ESTATE_USERNAME` read, and NOTHING in this repository ever set that variable
+/// — not `smoke.yaml`, not `scripts/enrol.sh`, not `MIGRATION_NOTES.md`. So the
+/// effective value was a constant in source that no operator could see, edit or
+/// override, which is precisely the state ADR-0569 exists to delete. It is a
+/// declared line in `reference.toml` now, under `[identity]`, and the
+/// environment read is gone rather than layered on top of the file: ADR-0571
+/// rules that a knob lives in exactly one place and that precedence between two
+/// sources is where drift hides.
+///
+/// The PASSWORD stays an environment read, and that is not an inconsistency. It
+/// is a credential rather than a knob — it arrives from the `estate` GitHub
+/// environment, it must never be committed, and it already refuses rather than
+/// defaulting.
 pub struct Identity {
     pub username: String,
     password: String,
@@ -31,13 +41,13 @@ pub struct Identity {
 
 impl Identity {
     /// The first standing identity, `S`.
-    pub fn primary() -> Result<Self> {
-        Self::from_env("ESTATE_USERNAME", DEFAULT_USERNAME, "ESTATE_PASSWORD")
+    pub fn primary(reference: &Reference) -> Result<Self> {
+        Self::named(&reference.identity.primary, "ESTATE_PASSWORD")
     }
 
     /// The second standing identity, `S2`, which the confinement rows need.
-    pub fn secondary() -> Result<Self> {
-        Self::from_env("ESTATE_USERNAME_2", DEFAULT_USERNAME_2, "ESTATE_PASSWORD_2")
+    pub fn secondary(reference: &Reference) -> Result<Self> {
+        Self::named(&reference.identity.secondary, "ESTATE_PASSWORD_2")
     }
 
     /// Absence is an ERROR, never a skip.
@@ -47,7 +57,7 @@ impl Identity {
     /// exists to remove one level up. The message names the ceremony that
     /// supplies the value, so a red run says "the credential is missing" rather
     /// than "the contract is broken".
-    fn from_env(user_var: &str, user_default: &str, pass_var: &str) -> Result<Self> {
+    fn named(username: &str, pass_var: &str) -> Result<Self> {
         let password = std::env::var(pass_var).with_context(|| {
             format!(
                 "{pass_var} is not set, so this row cannot authenticate. It is supplied by the \
@@ -56,7 +66,7 @@ impl Identity {
             )
         })?;
         Ok(Self {
-            username: std::env::var(user_var).unwrap_or_else(|_| user_default.to_string()),
+            username: username.to_string(),
             password,
         })
     }

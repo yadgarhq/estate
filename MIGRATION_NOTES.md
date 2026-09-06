@@ -128,6 +128,14 @@ human approving each run.
 Creates `estate-suite` and `estate-suite-2` once, and writes their passwords
 into the environment from item 4. Repeat it to rotate.
 
+**The two names are declared in `reference.toml` under `[identity]`**, and the
+suite reads them from there and from nowhere else (ADR-0569). They were compiled
+into `crates/front/src/lib.rs` behind an `ESTATE_USERNAME` variable nothing ever
+set. A ceremony that names the accounts otherwise is a one-line edit to
+`reference.toml` in the same pull request; the suite has no default to fall back
+to, and C-03's positive control is what fails loudly if the file and the accounts
+in `iam` disagree.
+
 **ADR-0492's admin path does not exist**, so the enrolments cannot be minted
 through a front door. They are minted through `iam`'s gRPC, which is an
 in-cluster act — an enumerated exception, done deliberately and logged.

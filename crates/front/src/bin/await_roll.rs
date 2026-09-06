@@ -35,8 +35,28 @@ const INTERVAL: Duration = Duration::from_secs(5);
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let module = std::env::var("ESTATE_ROLLED_MODULE").unwrap_or_default();
-    let tag = std::env::var("ESTATE_ROLLED_TAG").unwrap_or_default();
+    // **ADR-0569 EXCEPTION — THESE ARE NOT CONFIGURATION.** ADR-0569 governs a
+    // configuration knob: a value an operator sets for a process, read from one
+    // source, whose absence is a mistake worth refusing the boot over. These two
+    // are the RUN'S INPUT — `smoke.yaml` fills them from
+    // `github.event.client_payload` on a `module-rolled` dispatch, or from
+    // `inputs` on a manual run — and a run with no roll behind it is the ordinary
+    // case, not a misconfiguration. There is no seed file that could define them,
+    // because they describe THIS invocation rather than this installation.
+    //
+    // ADR-0569's own revisit trigger names the shape: "a knob appears whose
+    // absence leaves the system correct". Absence here is correct and is
+    // REPORTED — the next block writes "No roll was named" onto the run itself,
+    // so nothing is silently assumed.
+    //
+    // ABSENT AND EMPTY COLLAPSE DELIBERATELY, which is the opposite of the rule
+    // the estate's service binaries follow. There, Helm renders a nulled value as
+    // `""` and the two must be told apart. Here BOTH spellings mean "no roll was
+    // named", and GitHub Actions produces the empty one for an unset
+    // `client_payload` key — so distinguishing them would be two messages for one
+    // state.
+    let module = std::env::var("ESTATE_ROLLED_MODULE").unwrap_or_default(); // ADR-0569-EXCEPTION: a run input, not a knob.
+    let tag = std::env::var("ESTATE_ROLLED_TAG").unwrap_or_default(); // ADR-0569-EXCEPTION: a run input, not a knob.
 
     if module.is_empty() || tag.is_empty() {
         report(

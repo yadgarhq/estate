@@ -12,9 +12,22 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct Reference {
     pub edge: Edge,
+    pub identity: Identity,
     pub mcp: Mcp,
     pub login: Login,
     pub confinement: Confinement,
+}
+
+/// The names of the two standing identities the ceremony creates.
+///
+/// DECLARED HERE RATHER THAN COMPILED IN (ADR-0569). They were
+/// `DEFAULT_USERNAME` and `DEFAULT_USERNAME_2` in `estate-front`, behind an
+/// `ESTATE_USERNAME` read nothing ever set. The passwords are NOT here: they
+/// arrive from the `estate` GitHub environment and are read by `estate-front`.
+#[derive(Debug, Deserialize)]
+pub struct Identity {
+    pub primary: String,
+    pub secondary: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,8 +98,28 @@ impl Reference {
     /// is published on a NodePort rather than on 443. It changes WHERE the
     /// client connects and nothing about what it trusts — the name in the URL,
     /// the SNI and the certificate validated are the same either way.
+    ///
+    /// **ADR-0569 EXCEPTION, AND THE ARGUMENT IS THE DISCRIMINATOR.** ADR-0569
+    /// forbids three things: a compiled-in default, a system-level fallback, and
+    /// a last-resort constant. `self.edge.port` is none of the three. It is
+    /// `reference.toml`, which IS the declared source for this repository —
+    /// the file's own header exists to say that a value the suite asserts
+    /// against must be a line somebody can read and edit rather than a literal
+    /// buried in test code. So there is no value here that nobody chose, which
+    /// is the whole of what the rule is about. Contrast
+    /// `estate_front::Identity`, where the fallback WAS a constant in the source
+    /// and was therefore deleted rather than excepted.
+    ///
+    /// `scripts/enrol.sh` line 35 already implements exactly this precedence for
+    /// exactly this knob — `ESTATE_EDGE_PORT` over the port it reads out of
+    /// `reference.toml` — so this is written-down practice in this repository
+    /// rather than a case invented to keep a line.
     pub fn port(&self) -> u16 {
-        std::env::var("ESTATE_EDGE_PORT")
+        // THE MARKER IS A TRAILING COMMENT rather than a line of its own, and it
+        // has to be: the gate rejoins a `cargo fmt`-broken method chain before
+        // matching, then filters the JOINED line for the marker — so a marker on
+        // the line above is not on the text the filter reads.
+        std::env::var("ESTATE_EDGE_PORT") // ADR-0569-EXCEPTION: see the doc comment above.
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(self.edge.port)
@@ -119,6 +152,25 @@ mod tests {
         assert!(
             !r.confinement.targets.is_empty(),
             "C-18 with no targets is a row that cannot fail"
+        );
+
+        // THE IDENTITY NAMES, which have no compiled-in fallback behind them any
+        // more (ADR-0569). An empty name reaches `POST /auth/login` as `""`, and
+        // C-03's positive control would then fail with an account-enumeration
+        // diagnostic for what is really an unparsed reference file — so the
+        // emptiness is caught HERE, by the one test that runs without a cluster.
+        assert!(
+            !r.identity.primary.is_empty(),
+            "identity.primary must name the first standing identity; there is no default behind it"
+        );
+        assert!(
+            !r.identity.secondary.is_empty(),
+            "identity.secondary must name the second standing identity; there is no default behind it"
+        );
+        assert_ne!(
+            r.identity.primary, r.identity.secondary,
+            "the confinement rows need two DIFFERENT identities; one name twice makes C-20 pass \
+             by comparing an identity with itself"
         );
     }
 

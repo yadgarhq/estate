@@ -31,7 +31,7 @@ repos:
   # at first install and never re-resolves it, so a moving tag would silently
   # freeze each machine at whatever it meant the day it first ran.
   - repo: https://github.com/yadgarhq/actions
-    rev: v1.13.1
+    rev: v1.15.0
     hooks:
       - id: gitleaks
       - id: prettier
@@ -83,3 +83,22 @@ repos:
       # Keeping it is what makes that true tomorrow as well: the day this
       # repository grows a handler, the hook is already watching it.
       - id: observe-coverage
+      # ADR-0569'S GATE, AND THIS REPOSITORY IS THE REASON IT HAD TO BE WIDENED
+      # BEFORE IT COULD BE ADOPTED. The gate used to search `src/`, `tests/` and
+      # `benches/` at the root only, and this repository has none of those — it is
+      # `crates/front` and `crates/harness`. Against that layout it exited 1
+      # saying "a gate that searches nothing proves nothing": a refusal naming a
+      # real rule while reading no file, which made estate a permanent
+      # non-adopter. `yadgarhq/actions#59` widened the walk to `crates/*/src` and
+      # published the script; the four violations it then found in this
+      # repository are ledger 716.
+      #
+      # ADR-0577: a published gate is closed only when every consumer references
+      # it, which is what this line is. The rev moves from v1.13.1 to v1.15.0 for
+      # the whole block because pre-commit resolves one rev per repository entry.
+      #
+      # TWO OF THE FOUR FINDINGS ARE MARKED `ADR-0569-EXCEPTION` RATHER THAN
+      # FIXED, and the arguments are written at the lines themselves — the marker
+      # is the whole of the escape hatch, so `git grep ADR-0569-EXCEPTION` answers
+      # "which reads keep a fallback, and why" in one command.
+      - id: no-compiled-in-defaults
