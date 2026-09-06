@@ -100,7 +100,7 @@ async fn c14_the_edge_chains_to_the_committed_root_and_not_to_the_public_web_pki
 #[ignore = "dials the reference cluster edge; run via `cargo test --test smoke -- --ignored`"]
 async fn c01_a_real_login_answers_a_token_and_nothing_else() -> Result<()> {
     let suite = Suite::open()?;
-    let s = Identity::primary()?;
+    let s = Identity::primary(&suite.reference)?;
 
     let capture = auth::login(&suite.edge, &s.username, s.password()).await?;
     anyhow::ensure!(
@@ -140,7 +140,7 @@ async fn c01_a_real_login_answers_a_token_and_nothing_else() -> Result<()> {
 #[ignore = "dials the reference cluster edge; run via `cargo test --test smoke -- --ignored`"]
 async fn c02_a_wrong_password_discloses_nothing() -> Result<()> {
     let suite = Suite::open()?;
-    let s = Identity::primary()?;
+    let s = Identity::primary(&suite.reference)?;
 
     let capture = auth::login(&suite.edge, &s.username, "not-the-password").await?;
     assert_refusal_is_opaque(&suite, &capture, "C-02")
@@ -157,7 +157,8 @@ async fn c02_a_wrong_password_discloses_nothing() -> Result<()> {
 /// caller learns which usernames exist.
 ///
 /// **THE POSITIVE CONTROL IS THE FIRST CALL AND IT IS NOT CEREMONY.** This row
-/// compares a KNOWN username against an unknown one. If `ESTATE_USERNAME` is
+/// compares a KNOWN username against an unknown one. If `identity.primary` in
+/// `reference.toml` is
 /// mistyped, or the identity is deleted, both arms are the unknown-user path,
 /// they are trivially identical, and the row reports green having tested
 /// nothing — the same trap C-18 already accepts and guards against by resolving
@@ -170,7 +171,7 @@ async fn c02_a_wrong_password_discloses_nothing() -> Result<()> {
 #[ignore = "dials the reference cluster edge; run via `cargo test --test smoke -- --ignored`"]
 async fn c03_an_unknown_username_is_indistinguishable_from_a_wrong_password() -> Result<()> {
     let suite = Suite::open()?;
-    let s = Identity::primary()?;
+    let s = Identity::primary(&suite.reference)?;
 
     let control = auth::login(&suite.edge, &s.username, s.password()).await?;
     anyhow::ensure!(
@@ -178,7 +179,8 @@ async fn c03_an_unknown_username_is_indistinguishable_from_a_wrong_password() ->
         "C-03 POSITIVE CONTROL FAILED, so this row proved nothing about the contract: logging in \
          as {:?} with the real password answered {} — {}. That username must EXIST for the \
          comparison below to mean anything; if it does not, both arms are the unknown-user path, \
-         they match trivially, and the row would report green. Check ESTATE_USERNAME and the \
+         they match trivially, and the row would report green. Check `identity.primary` in \
+         reference.toml against the account the ceremony created, and the \
          identity ceremony before reading this as an account-enumeration finding.",
         s.username,
         control.status,
@@ -303,7 +305,7 @@ async fn c04_a_junk_bearer_token_authenticates_nobody() -> Result<()> {
 /// C-04's corroborating call, in its own function so that every `?` inside it
 /// lands in a `Result` the row DISCARDS. See the call site.
 async fn corroborate_c04(suite: &Suite) -> Result<u16> {
-    let s = Identity::primary()?;
+    let s = Identity::primary(&suite.reference)?;
     let token = suite.token_for(&s).await?;
     let caller = mcp::Caller::bearer(token, suite.project.clone());
     let listed = mcp::tools_call(
@@ -472,7 +474,7 @@ async fn c13_the_mcp_baseline_answers_as_the_revision_defines() -> Result<()> {
 #[ignore = "dials the reference cluster edge; run via `cargo test --test smoke -- --ignored`"]
 async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
     let suite = Suite::open()?;
-    let s = Identity::primary()?;
+    let s = Identity::primary(&suite.reference)?;
     let caller = mcp::Caller::bearer(suite.token_for(&s).await?, suite.project.clone());
     let r = &suite.reference;
 
@@ -561,8 +563,8 @@ async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
 async fn c11_another_users_record_is_indistinguishable_from_no_record() -> Result<()> {
     let suite = Suite::open()?;
     let r = &suite.reference;
-    let s = Identity::primary()?;
-    let s2 = Identity::secondary()?;
+    let s = Identity::primary(&suite.reference)?;
+    let s2 = Identity::secondary(&suite.reference)?;
 
     let owner = mcp::Caller::bearer(suite.token_for(&s).await?, suite.project.clone());
     let created = mcp::tools_call(

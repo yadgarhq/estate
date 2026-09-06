@@ -31,6 +31,28 @@ port = 443
 # must NOT chain to the public web PKI. C-14 asserts both halves.
 root_pem = "ca/root.pem"
 
+[identity]
+# THE TWO STANDING IDENTITIES the ceremony creates, and the ONE place their names
+# are written (ADR-0569, ledger 716). They used to be `DEFAULT_USERNAME` and
+# `DEFAULT_USERNAME_2` in `crates/front/src/lib.rs`, behind an `ESTATE_USERNAME`
+# environment read that nothing in this repository or in `smoke.yaml` ever set —
+# so a constant no operator could see was the effective value, which is the state
+# ADR-0569 exists to delete. Here they are a line a reader can edit.
+#
+# NOT MEASURED, unlike every other value in this file, and the difference is
+# stated rather than hidden. These are DECLARED: `MIGRATION_NOTES.md` section 5
+# tells the operator to create `estate-suite` and `estate-suite-2` through iam's
+# `CreateUser`, and `scripts/enrol.sh` then reads the username BACK out of the
+# enrol response rather than choosing it. A ceremony that named them otherwise
+# makes this file the one-line change, and C-03's positive control is what fails
+# loudly if the names here and the accounts in iam disagree.
+#
+# The PASSWORDS are not here and never will be. They arrive as `ESTATE_PASSWORD`
+# and `ESTATE_PASSWORD_2` from the `estate` GitHub environment, and their absence
+# is reported as a missing credential rather than as a failing contract.
+primary = "estate-suite"
+secondary = "estate-suite-2"
+
 [mcp]
 # `gateway/src/mcp.rs:30`. The one revision this server implements.
 protocol_version = "2026-07-28"
