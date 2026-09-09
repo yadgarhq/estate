@@ -102,3 +102,10 @@ repos:
       # is the whole of the escape hatch, so `git grep ADR-0569-EXCEPTION` answers
       # "which reads keep a fallback, and why" in one command.
       - id: no-compiled-in-defaults
+      # LEDGER 658. A mechanical ceiling on the size of a `run:` block. THIS
+      # REPOSITORY IS THE ONE THE ID WAS PUBLISHED FOR: measured 2026-09-09,
+      # estate holds the only real `run:` block in the estate outside
+      # yadgarhq/actions itself, and it was the one consumer with such a block
+      # and no gate over it. Every other Rust consumer measures zero blocks,
+      # because a consumer's workflow is a caller.
+      - id: run-block-size
