@@ -10,6 +10,7 @@ name: ci
 # no logs, which says nothing about permissions. Each job states its own instead.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
     tags: ["v*"]
