@@ -26,12 +26,26 @@ pub fn project_id() -> String {
 }
 
 /// The `<run-id>-<run-attempt>` half, or a local substitute.
+///
+/// Reads the ambient environment and hands it to [`run_key_from`], which holds
+/// the whole of the decision. The split is what makes the decision testable:
+/// see the note above the tests.
 pub fn run_key() -> String {
-    match (
-        std::env::var("GITHUB_RUN_ID"),
-        std::env::var("GITHUB_RUN_ATTEMPT"),
-    ) {
-        (Ok(id), Ok(attempt)) if !id.is_empty() && !attempt.is_empty() => {
+    let id = std::env::var("GITHUB_RUN_ID").ok();
+    let attempt = std::env::var("GITHUB_RUN_ATTEMPT").ok();
+    run_key_from(id.as_deref(), attempt.as_deref())
+}
+
+/// The decision itself, over values rather than over the process environment.
+///
+/// `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT` are default variables GitHub sets
+/// on every runner, so a test that reads the ambient environment can only ever
+/// see ONE of the two branches below — whichever one the machine it runs on
+/// happens to be. Taking the pair as arguments is what lets both branches be
+/// asserted everywhere, on a workstation and on a runner alike.
+fn run_key_from(id: Option<&str>, attempt: Option<&str>) -> String {
+    match (id, attempt) {
+        (Some(id), Some(attempt)) if !id.is_empty() && !attempt.is_empty() => {
             format!("{id}-{attempt}")
         }
         // A run id with no attempt is not treated as attempt 1. It means the
@@ -57,11 +71,35 @@ mod tests {
 
     /// Off a runner the key is local and per-process, so a workstation run
     /// cannot collide with anything.
+    ///
+    /// The absent runner is passed in rather than read from the environment.
+    /// The earlier form of this test skipped itself when `GITHUB_RUN_ID` was
+    /// set, which on a runner is always — so it reported `ok` in CI having
+    /// asserted nothing.
     #[test]
     fn off_a_runner_the_key_is_local() {
-        if std::env::var("GITHUB_RUN_ID").is_ok() {
-            return;
-        }
-        assert!(run_key().starts_with("local-"), "{}", run_key());
+        assert_eq!(
+            run_key_from(None, None),
+            format!("local-{}", std::process::id())
+        );
+    }
+
+    /// On a runner the key is the run id and the attempt, in that order and
+    /// joined by a hyphen. The attempt is what makes a re-run a new namespace.
+    #[test]
+    fn on_a_runner_the_key_carries_the_run_id_and_the_attempt() {
+        assert_eq!(run_key_from(Some("1658821493"), Some("3")), "1658821493-3");
+    }
+
+    /// A run id with no attempt is the environment the key was NOT designed
+    /// for, and it falls back rather than guessing attempt 1. An empty value is
+    /// the same case: GitHub sets both variables together, so one of them
+    /// arriving blank is not a runner either.
+    #[test]
+    fn a_run_id_without_an_attempt_is_not_attempt_one() {
+        let local = format!("local-{}", std::process::id());
+        assert_eq!(run_key_from(Some("1658821493"), None), local);
+        assert_eq!(run_key_from(Some("1658821493"), Some("")), local);
+        assert_eq!(run_key_from(Some(""), Some("3")), local);
     }
 }
