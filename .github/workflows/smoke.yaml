@@ -63,7 +63,9 @@ jobs:
     # THE CAGE HAS NO CPU LIMIT, ONLY A MEMORY ONE. `estate-front`'s runner
     # pod is capped at 2Gi with no `cpu.max`, but cargo picks its build
     # parallelism from `nproc`, not from the cgroup — so with no CPU limit it
-    # reads the host's core count and launches that many parallel `rustc`
+    # reads the host's core count (inferred from the absent `cpu.max`, not
+    # measured inside the pod — it is ephemeral at `minRunners: 0`) and
+    # launches that many parallel `rustc`
     # processes, each linking through its own thread pool, inside the 2Gi
     # cage. Under that load a linker thread-stack allocation hits the cage's
     # memory limit and `pthread_create` returns EAGAIN, which `ld` reports as
