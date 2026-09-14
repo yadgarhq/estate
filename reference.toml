@@ -114,12 +114,21 @@ connect_timeout_ms = 3000
 # `v20260528-9350166c` runs a `kube-network-policies` controller (ledger 684),
 # and ledger 511 proved ingress enforcement live twelve times over.
 #
-# AND C-18 HAS NEVER ACTUALLY BEEN OBSERVED RED. Six smoke runs reached the
-# confinement step (`33985246084`, `33987703582`, `33987725928`, `33997388647`,
-# `33997423600`, `33999752662`) and every one reported `ok` in exactly `18.02s`
-# — six sequential 3000ms timeouts against the six addresses the four targets
-# above resolve to. A refused connection returns at once; a DROPPED one burns
-# the whole timeout. The row was written red-at-birth and measured green.
+# AND C-18 HAS NEVER ACTUALLY BEEN OBSERVED RED. NINETEEN smoke runs have now
+# reached the confinement step, on three separate days, and every one reported
+# `ok` in exactly `18.02s` — six sequential 3000ms timeouts against the six
+# addresses the four targets above resolve to. A refused connection returns at
+# once; a DROPPED one burns the whole timeout, so the 18.02s IS the reading: had
+# any one address accepted, that connect would have returned at once, the row
+# would have FAILED, and the step would have taken about fifteen seconds.
+# 2026-09-05: `33985246084`, `33987703582`, `33987725928`, `33997388647`,
+# `33997423600`, `33999752662`. 2026-09-12: `34706172689`, `34708408176`,
+# `34709049229`, `34709318807`, `34713792693`. 2026-09-14: `34863567216`,
+# `34873346748`, `34873363311`, `34873536330`, `34873680560`, `34873848695`,
+# `34875276755`, `34875568456`. The `test result: ok ... finished in 18.02s`
+# line was read directly out of the logs of `33985246084` and `34875568456`,
+# the oldest and the newest, rather than inferred from the step's conclusion.
+# The row was written red-at-birth and has only ever measured green.
 #
 # WHAT ENFORCES EACH TARGET TODAY, because it is not one thing. `iam-db`,
 # `task-db` and `valkey` now also carry live ingress policies in `yadgar` that
@@ -129,16 +138,17 @@ connect_timeout_ms = 3000
 # 18.02s arithmetic is the evidence for egress enforcement here, and
 # `yadgarhq/docs`' `plans/chart-hardening.md` records it as exactly that.
 #
-# THE THREE FIELDS BELOW ARE STALE AND DELIBERATELY UNTOUCHED BY THIS
-# CORRECTION. `deadline_task` names ledger 614, which is WITHDRAWN (docs#51,
-# ADR-0594): plain NetworkPolicy suffices, kindnet enforces it, and Cilium is
-# ruled out under rootless podman. So the task that was to clear this red is
-# closed and the red it was to clear was never observed. Editing these three
-# values changes what `the_deadline_is_a_real_date_and_the_task_is_named`
-# asserts — that test is NOT `#[ignore]`d, so on 2026-10-04 this repository
-# goes red and blocks every merge. Retiring the deadline machinery, and deciding
-# whether C-18 becomes an ordinary hard check, is a design call for the
-# operator rather than a prose fix. It is filed as such.
-deadline_task = "yadgarhq/docs ledger 614"
-deadline_date = "2026-10-03"
-deadline_summary = "replace kindnet with a NetworkPolicy-enforcing CNI (nix repo, ADR-0480)"
+# THERE WAS A DEADLINE HERE AND IT IS REMOVED, NOT RE-DATED (ADR-0687). This
+# file carried `deadline_task = "yadgarhq/docs ledger 614"`, `deadline_date =
+# "2026-10-03"` and a `deadline_summary` reading "replace kindnet with a
+# NetworkPolicy-enforcing CNI (nix repo, ADR-0480)", read by a test that was
+# deliberately not `#[ignore]`d. Ledger 614 is WITHDRAWN (docs#51, ADR-0594):
+# plain NetworkPolicy suffices, kindnet enforces it, and Cilium is ruled out
+# under rootless podman. So the task that was to clear this red was closed on
+# measurement, and the red it was to clear was never observed. On 2026-10-04
+# that test would have failed and blocked every merge over work ruled out five
+# weeks earlier. Re-dating it would have preserved a commitment nobody holds
+# and moved the outage to a new day, so the three fields and the test that read
+# them are gone. C-18 is an ORDINARY HARD CHECK now: `smoke.yaml` no longer
+# excuses it with `continue-on-error`, and its own verdict is the only thing
+# that speaks for it.

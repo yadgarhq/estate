@@ -56,9 +56,6 @@ pub struct Login {
 pub struct Confinement {
     pub targets: Vec<String>,
     pub connect_timeout_ms: u64,
-    pub deadline_task: String,
-    pub deadline_date: String,
-    pub deadline_summary: String,
 }
 
 /// The repository root, derived from this crate's manifest directory.

@@ -112,7 +112,10 @@ jobs:
           ESTATE_PASSWORD_2: ${{ secrets.ESTATE_PASSWORD_2 }}
         run: cargo test --locked --test smoke -- --ignored --nocapture
 
-      # C-18 REPORTS AS ITS OWN NAMED CHECK, and this step is that separation.
+      # C-18 REPORTS AS ITS OWN NAMED CHECK, and this step is that separation. It
+      # is kept so that a reader of a run sees the confinement verdict without
+      # reading the suite's; it is no longer protecting the suite from a standing
+      # red, because there was never a standing red to protect it from.
       #
       # THIS SAID "It is RED AT BIRTH: kindnet enforces no NetworkPolicy, so the
       # policy in `yadgarhq/deploy` is the specification this row tests rather than
@@ -120,21 +123,30 @@ jobs:
       # wrong, and the old text is quoted rather than deleted so that a reader does
       # not re-measure the CNI, find kindnet, and derive the same conclusion again.
       # kindnetd `v20260528-9350166c` runs a `kube-network-policies` controller
-      # (ledger 684). SIX RUNS OF THIS VERY STEP reported `ok` in exactly `18.02s`
-      # — six 3000ms drops. The row has never been observed red.
+      # (ledger 684). NINETEEN RUNS OF THIS VERY STEP, on three separate days,
+      # reported `ok` in exactly `18.02s` — six 3000ms drops against the six
+      # addresses the four declared targets resolve to. The row has never been
+      # observed red. `reference.toml` lists the nineteen run ids.
       #
-      # `continue-on-error` IS NOW UNJUSTIFIED BY ITS OWN ARGUMENT, and removing it
-      # is deliberately NOT part of the prose correction. It was the compromise for
-      # a standing red; there is no standing red. Dropping it makes C-18 able to
-      # fail the workflow, which is a change in what a red smoke run means and is
-      # the operator's call. `reference.toml` carries the same note about the three
-      # stale deadline fields, whose task (ledger 614) is WITHDRAWN.
-      - name: C-18 confinement (observed green; see reference.toml)
+      # `continue-on-error` IS GONE (ADR-0687). This step used to carry it, with the
+      # note "removing it is deliberately NOT part of the prose correction … the
+      # operator's call". The call is made: the excuse was the compromise for a
+      # standing red, there is no standing red, and a check that cannot fail the
+      # workflow reports nothing. C-18 is an ORDINARY HARD CHECK — a red here fails
+      # this run, which is the point. The runtime is what makes that safe to gate on:
+      # had any target accepted, the connect would return at once, the row would fail,
+      # and the step would finish in about fifteen seconds rather than 18.02s.
+      - name: C-18 confinement — nothing inside the cluster is reachable
         id: confinement
-        continue-on-error: true
         run: cargo test --locked --test confinement -- --ignored --nocapture
 
+      # `if: always()` IS WHAT `continue-on-error` USED TO DO FOR THIS STEP. With the
+      # excuse dropped, a failing C-18 aborts the job — and without this condition the
+      # summary would vanish in exactly the run a person needs it. `outcome` is the
+      # step's own result and reads `failure` here, so the summary states the red
+      # rather than inheriting a job-level one.
       - name: say what C-18 answered, on the run
+        if: always()
         env:
           OUTCOME: ${{ steps.confinement.outcome }}
         run: |
@@ -144,7 +156,9 @@ jobs:
             echo ""
             echo "Outcome: \`$OUTCOME\`."
             echo ""
-            echo "This row has only ever been observed green, in exactly 18.02s — six 3000ms"
-            echo "drops. A red here is a real regression, not the old \`kindnet enforces nothing\`"
-            echo "expectation, which was false. See UNOBSERVED.md and reference.toml."
+            echo "This row has only ever been observed green, across nineteen runs, in exactly"
+            echo "18.02s — six 3000ms drops. It is an ordinary hard check: a red here fails this"
+            echo "run and is a real regression, not the old \`kindnet enforces nothing\`"
+            echo "expectation, which was false. There is no deadline behind it and nothing to"
+            echo "wait for. See UNOBSERVED.md and reference.toml."
           } >> "$GITHUB_STEP_SUMMARY"
