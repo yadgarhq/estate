@@ -38,10 +38,15 @@
 //! that will clear it and the date it should have, both declared in
 //! `reference.toml`. A row nobody can date is a row nobody will fix.
 //!
-//! **IT IS ITS OWN FILE AND ITS OWN CHECK.** `smoke.yaml` runs this target in a
+//! **IT IS ITS OWN FILE AND ITS OWN CHECK, AND THE REASON GIVEN FOR THAT HAS
+//! ALSO EXPIRED.** This paragraph read: "`smoke.yaml` runs this target in a
 //! separate step so a standing red does not swallow the verdict of the nine rows
 //! that are not red by design. That separation is itself a compromise — it may
-//! blunt the alarm — and the deadline is the half worth defending.
+//! blunt the alarm — and the deadline is the half worth defending." There is no
+//! standing red and there never was, so the separation is protecting nothing.
+//! It is kept because collapsing it back into the suite verdict, and dropping
+//! `continue-on-error` with it, changes what a red smoke run means — the
+//! operator's call, not a prose fix.
 //!
 //! Read `UNOBSERVED.md` before concluding this row is broken.
 
