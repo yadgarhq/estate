@@ -24,11 +24,17 @@
 # from the `yadgarhq-bot` App, which is installed organisation-wide with write
 # across every repository in the estate — `contents`, `pull_requests`,
 # `workflows`, `issues` and `administration`, measured 2026-09-05. The
-# `estate-front` runner is a stated attack surface whose NetworkPolicy today
-# enforces nothing, because kindnet evaluates none. A job there that holds that
-# key makes the auditor the softest way into every repository the auditor exists
-# to protect. ADR-0563: a workflow that reads the App's private key runs on a
-# GitHub-hosted runner, and no job on a self-hosted runner ever receives it.
+# `estate-front` runner is a stated attack surface. This clause used to continue
+# "whose NetworkPolicy today enforces nothing, because kindnet evaluates none";
+# that inference was wrong and its removal does not weaken the rule. kindnetd
+# `v20260528-9350166c` does evaluate NetworkPolicy, so `estate-front-egress` is
+# live — AND ADR-0563 REJECTED RELYING ON IT ANYWAY, on a ground the CNI never
+# touched: an egress policy does not stop a process reading a secret out of its
+# own environment and exfiltrating through an allowed path, and rule (d) of that
+# policy allows the whole internet on :443. A job there that holds that key makes
+# the auditor the softest way into every repository the auditor exists to protect.
+# ADR-0563: a workflow that reads the App's private key runs on a GitHub-hosted
+# runner, and no job on a self-hosted runner ever receives it.
 #
 # THIS FILE CANNOT ENFORCE THAT. Declaring the label makes actionlint accept it
 # in ANY workflow in this repository, including the two that must never use it.
