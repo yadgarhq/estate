@@ -152,9 +152,24 @@ fn c18_failure_message(reachable: &[String]) -> String {
 /// `deadline_date`. Those fields no longer exist, so the assertion is moved to
 /// the part of the message that still has a live subject: the addresses the row
 /// actually reached, which are the whole diagnostic.
+///
+/// **THE FIXTURE IS READ OUT OF `reference.toml` RATHER THAN WRITTEN HERE.** An
+/// entry is `"{target} at {addr}"`, and a literal one would put a cluster
+/// service name in a `.rs` file, which D80's gate refuses — correctly, because
+/// that is the compiled-in environment dependency the rule exists to catch. It
+/// is also the better fixture: the declared targets are what the row will
+/// actually report, so this asserts against a declared value the way every other
+/// row does. The address half is described rather than named, because the
+/// property under test is that the message echoes the entry it was handed.
 #[test]
 fn the_failure_text_names_what_was_reachable() {
-    let reached = "iam-db.yadgar.svc.cluster.local:50051 at 10.96.0.7:50051";
-    let msg = c18_failure_message(&[reached.to_string()]);
-    assert!(msg.contains(reached), "{msg}");
+    let reference = Reference::load().expect("reference.toml parses");
+    let target = reference
+        .confinement
+        .targets
+        .first()
+        .expect("reference.toml declares at least one confinement target");
+    let reached = format!("{target} at the address it resolved to");
+    let msg = c18_failure_message(std::slice::from_ref(&reached));
+    assert!(msg.contains(&reached), "{msg}");
 }
