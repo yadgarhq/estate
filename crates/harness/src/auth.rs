@@ -49,7 +49,7 @@ pub fn token_of(capture: &Captured) -> Result<String> {
 /// could eventually make valid, and a row asserting "this exact string is
 /// refused" would then be asserting nothing.
 pub fn junk_bearer() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 64];
     rand::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{b:02x}")).collect()
