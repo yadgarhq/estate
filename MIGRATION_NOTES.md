@@ -107,7 +107,8 @@ STILL TRUE: the CNI is kindnet, and there is no Calico, Cilium or Weave. NO LONG
 TRUE: that it enforces nothing. kindnetd `v20260528-9350166c` runs a
 `kube-network-policies` controller (ledger 684), and ledger 511 proved ingress
 enforcement live twelve times over. C-18 itself has only ever been observed GREEN,
-six runs at exactly `18.02s`, which is six 3000ms drops.
+nineteen runs on three separate days, each at exactly `18.02s`, which is six
+3000ms drops. `reference.toml` lists the run ids.
 
 **The change was kind with `disableDefaultCNI` plus Cilium or Calico, in the nix
 repo (ADR-0480). It is not happening.** `yadgarhq/docs` ledger 614 is WITHDRAWN
@@ -117,13 +118,18 @@ ruled out on measurement — rootless podman puts the kind nodes in a non-initia
 user namespace, `/sys/fs/bpf` is `0700 root`, and Cilium mandates
 `CAP_SYS_ADMIN`. Calico is left unestablished rather than endorsed.
 
-**What is left is a dangling reference rather than a task.** `reference.toml` still
-carries `deadline_task = "yadgarhq/docs ledger 614"` with `deadline_date =
-"2026-10-03"`, and `the_deadline_is_a_real_date_and_the_task_is_named` is NOT
-`#[ignore]`d, so on **2026-10-04 this repository goes red and blocks every merge**
-on the strength of a withdrawn row. Clearing that needs a decision — re-date the
-row, or retire the deadline machinery and let C-18 be an ordinary hard check — and
-the decision changes test behaviour, so it is not a prose fix.
+**The dangling reference is gone, and the decision that cleared it is ADR-0687.**
+This item said: "`reference.toml` still carries `deadline_task = "yadgarhq/docs
+ledger 614"` with `deadline_date = "2026-10-03"`, and
+`the_deadline_is_a_real_date_and_the_task_is_named` is NOT `#[ignore]`d, so on
+**2026-10-04 this repository goes red and blocks every merge** on the strength of a
+withdrawn row. Clearing that needs a decision — re-date the row, or retire the
+deadline machinery and let C-18 be an ordinary hard check." Both halves are now
+settled the same way: the three `deadline_*` fields and the test that read them are
+DELETED rather than re-dated, because a deadline whose target was withdrawn on
+measurement has no commitment left to reschedule, and C-18 is an ordinary hard
+check with `continue-on-error` dropped from `smoke.yaml`. There is still nothing
+here for the operator to do.
 
 **The FQDN want survives the withdrawal and does not justify a CNI swap.** An
 FQDN-aware policy (Cilium) would narrow the runner's GitHub egress from "the
