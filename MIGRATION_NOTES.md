@@ -94,24 +94,45 @@ in `yadgarhq/docs`, which sets it at creation. This is defence in depth anyway:
 `smoke.yaml` triggers on `repository_dispatch` and `workflow_dispatch` only, and
 neither is reachable from a fork.
 
-## 3. The CNI change — the dated task C-18 names
+## 3. The CNI change — WITHDRAWN, and there is nothing here for the operator to do
 
-**C-18 is red until this lands, by design.** kindnet enforces no NetworkPolicy,
-so the policy `deploy` applies for item 2 is accepted by the API server and
-applied by nothing.
+**This item said: "C-18 is red until this lands, by design. kindnet enforces no
+NetworkPolicy, so the policy `deploy` applies for item 2 is accepted by the API
+server and applied by nothing."** The measurement was right and the inference from
+it was wrong. It is quoted rather than deleted, because a reader told only "that
+was wrong" re-measures the CNI, finds kindnet, and derives the same false
+conclusion.
 
-The change is kind with `disableDefaultCNI` plus Cilium or Calico, and it lives
-in the **nix repo** (ADR-0480), outside this repository's write scope.
+STILL TRUE: the CNI is kindnet, and there is no Calico, Cilium or Weave. NO LONGER
+TRUE: that it enforces nothing. kindnetd `v20260528-9350166c` runs a
+`kube-network-policies` controller (ledger 684), and ledger 511 proved ingress
+enforcement live twelve times over. C-18 itself has only ever been observed GREEN,
+six runs at exactly `18.02s`, which is six 3000ms drops.
 
-Filed as a dated task so the red is a gap with a deadline rather than a recorded
-state: **`yadgarhq/docs` ledger 614, due 2026-10-03.** C-18's own failure output
-prints both. If today is past that date, escalate the task rather than muting the
-row.
+**The change was kind with `disableDefaultCNI` plus Cilium or Calico, in the nix
+repo (ADR-0480). It is not happening.** `yadgarhq/docs` ledger 614 is WITHDRAWN
+(docs#51, ADR-0594): the policies this estate ships use only `podSelector`,
+`namespaceSelector` and ports, which kindnet enforces, and Cilium is separately
+ruled out on measurement — rootless podman puts the kind nodes in a non-initial
+user namespace, `/sys/fs/bpf` is `0700 root`, and Cilium mandates
+`CAP_SYS_ADMIN`. Calico is left unestablished rather than endorsed.
 
-Worth deciding together with the CNI: an FQDN-aware policy (Cilium) would narrow
-the runner's GitHub egress from "the internet on :443, minus this cluster" to
-GitHub itself. That coarseness is stated in the policy file, which now lives in
-`yadgarhq/deploy` at `infra/estate-front/networkpolicy.yaml`.
+**What is left is a dangling reference rather than a task.** `reference.toml` still
+carries `deadline_task = "yadgarhq/docs ledger 614"` with `deadline_date =
+"2026-10-03"`, and `the_deadline_is_a_real_date_and_the_task_is_named` is NOT
+`#[ignore]`d, so on **2026-10-04 this repository goes red and blocks every merge**
+on the strength of a withdrawn row. Clearing that needs a decision — re-date the
+row, or retire the deadline machinery and let C-18 be an ordinary hard check — and
+the decision changes test behaviour, so it is not a prose fix.
+
+**The FQDN want survives the withdrawal and does not justify a CNI swap.** An
+FQDN-aware policy (Cilium) would narrow the runner's GitHub egress from "the
+internet on :443, minus this cluster" to GitHub itself. That is a narrowing of a
+rule that already works, not a missing capability: rule (d) permits the egress the
+suite needs today. The coarseness is stated in the policy file, which lives in
+`yadgarhq/deploy` at `infra/estate-front/networkpolicy.yaml`. If it is ever wanted
+on its own merits, rootless-podman feasibility becomes the blocking question and
+the answer has to come from a real Calico install in a disposable cluster.
 
 ## 4. Create the `estate` GitHub environment
 
@@ -215,9 +236,14 @@ to restore these after a settings change.
   are stage 4's workflows and they are written **in this repository**, so this
   is where the warning belongs. They mint installation tokens from the App
   above, which is organisation-wide write across every repository in the estate.
-  `estate-front` is a stated attack surface whose NetworkPolicy today enforces
-  nothing (item 3). Putting an organisation-wide write credential inside that
-  blast radius makes the auditor the softest way into every repository the
+  `estate-front` is a stated attack surface. This sentence used to continue "whose
+  NetworkPolicy today enforces nothing (item 3)"; that inference was wrong, and
+  removing it does not weaken the rule. ADR-0563 rejected relying on the policy on
+  a ground the CNI never touched: an egress policy does not stop a process reading
+  a secret out of its own environment and exfiltrating it through an allowed path,
+  and rule (d) of that policy permits the whole internet on :443. Putting an
+  organisation-wide write credential inside that blast radius makes the auditor the
+  softest way into every repository the
   auditor exists to protect. ADR-0563 decides this: a workflow that reads the
   App's private key runs on a GitHub-hosted runner, and no job on a self-hosted
   runner ever receives it. `estate-front` is a valid label in

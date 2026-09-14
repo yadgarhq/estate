@@ -6,8 +6,13 @@ name: smoke
 #
 # NEVER `pull_request`. A fork pull request executes attacker-chosen workflow
 # code, and this workflow runs on a self-hosted runner inside the cluster,
-# holding the runner's registration token, the `estate` environment gate, and —
-# until the CNI changes and C-18 goes green — line of sight to every service.
+# holding the runner's registration token and the `estate` environment gate. This
+# clause used to add "and — until the CNI changes and C-18 goes green — line of
+# sight to every service"; that half is deleted rather than quoted because it is
+# no longer a reason for this trigger list. `estate-front-egress` is enforced and
+# C-18 measures it green, so the runner does NOT have line of sight to every
+# service. The registration token and the environment gate are reason enough on
+# their own, and neither depends on the CNI.
 # Three controls, and this trigger list is the first: `repository_dispatch`
 # (`module-rolled`) and `workflow_dispatch`, and nothing else — the two the `on:`
 # block below declares, neither of which a fork can reach. The second control is
@@ -109,17 +114,22 @@ jobs:
 
       # C-18 REPORTS AS ITS OWN NAMED CHECK, and this step is that separation.
       #
-      # It is RED AT BIRTH: kindnet enforces no NetworkPolicy, so the policy in
-      # `yadgarhq/deploy` is the specification this row tests rather than something
-      # applied. Folding a standing red into the verdict of nine rows that are
-      # not red by design would teach everyone to ignore the verdict.
+      # THIS SAID "It is RED AT BIRTH: kindnet enforces no NetworkPolicy, so the
+      # policy in `yadgarhq/deploy` is the specification this row tests rather than
+      # something applied." The measurement was right and the inference from it was
+      # wrong, and the old text is quoted rather than deleted so that a reader does
+      # not re-measure the CNI, find kindnet, and derive the same conclusion again.
+      # kindnetd `v20260528-9350166c` runs a `kube-network-policies` controller
+      # (ledger 684). SIX RUNS OF THIS VERY STEP reported `ok` in exactly `18.02s`
+      # — six 3000ms drops. The row has never been observed red.
       #
-      # `continue-on-error` IS THE COMPROMISE, NOT THE MITIGATION. The row's own
-      # failure output names the dated task that will clear it, and that deadline
-      # is the half worth defending — a gap with a date is a task, an indefinite
-      # red is the recorded state ADR-0561 forbids. This step goes away at
-      # stage 5, when the CNI change lands and the row goes green.
-      - name: C-18 confinement (red until the CNI change lands)
+      # `continue-on-error` IS NOW UNJUSTIFIED BY ITS OWN ARGUMENT, and removing it
+      # is deliberately NOT part of the prose correction. It was the compromise for
+      # a standing red; there is no standing red. Dropping it makes C-18 able to
+      # fail the workflow, which is a change in what a red smoke run means and is
+      # the operator's call. `reference.toml` carries the same note about the three
+      # stale deadline fields, whose task (ledger 614) is WITHDRAWN.
+      - name: C-18 confinement (observed green; see reference.toml)
         id: confinement
         continue-on-error: true
         run: cargo test --locked --test confinement -- --ignored --nocapture
@@ -134,6 +144,7 @@ jobs:
             echo ""
             echo "Outcome: \`$OUTCOME\`."
             echo ""
-            echo "Red is expected until the CNI change lands; the row's own output names the"
-            echo "dated task that clears it. See UNOBSERVED.md and reference.toml."
+            echo "This row has only ever been observed green, in exactly 18.02s — six 3000ms"
+            echo "drops. A red here is a real regression, not the old \`kindnet enforces nothing\`"
+            echo "expectation, which was false. See UNOBSERVED.md and reference.toml."
           } >> "$GITHUB_STEP_SUMMARY"

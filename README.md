@@ -55,10 +55,17 @@ Stated here rather than left to be inferred.
   `await-roll` prints on the run itself that the verdict may describe the
   previous pods. Stage 3's A-04 replaces that sentence with digest parity for all
   five.
-- **C-18 is red.** kindnet enforces no NetworkPolicy, so the policy in
+- **C-18 was declared red and has only ever been observed green.** This entry read
+  "**C-18 is red.** kindnet enforces no NetworkPolicy, so the policy in
   `yadgarhq/deploy`'s `infra/estate-front/` is the specification the row tests
-  rather than something applied. The red carries
-  a dated task and the row's own output names it.
+  rather than something applied." The measurement was right and the inference from
+  it was wrong: the CNI is still kindnet with no Calico, Cilium or Weave, but
+  kindnetd `v20260528-9350166c` runs a `kube-network-policies` controller and does
+  enforce. Six smoke runs reported C-18 `ok` in exactly `18.02s` — six sequential
+  3000ms timeouts, which is the shape of a drop rather than of a missing policy.
+  The dated task the row still names, `yadgarhq/docs` ledger 614, is WITHDRAWN;
+  `reference.toml` explains why its three deadline fields are left standing and
+  what clearing them would cost.
 - **This repository is not yet visible to the auditor.** `PROTO_VERSION` is what
   makes a repository a consumer the auditor sees, and it is deliberately absent:
   the shared CI's `proto` job reads `PROTO_PATHS` and diffs a vendored `proto/`

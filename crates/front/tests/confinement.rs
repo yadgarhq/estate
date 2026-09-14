@@ -1,11 +1,35 @@
 //! C-18 — the front-door runner's confinement (ADR-0562, self).
 //!
-//! **THIS ROW IS RED AT BIRTH AND THE RED IS THE HONEST ALARM.** The cluster's
-//! CNI is kindnet, which enforces no NetworkPolicy. The policy in
-//! `yadgarhq/deploy` (`infra/estate-front/networkpolicy.yaml`) is therefore the
-//! SPECIFICATION this row tests rather than something the network applies, and
-//! until the CNI changes this row fails. That is correct
-//! behaviour for a suite whose purpose is to say what is true.
+//! **THIS FILE SAID THE ROW IS RED AT BIRTH, AND THE ROW HAS ONLY EVER BEEN
+//! OBSERVED GREEN.** The old text read: "**THIS ROW IS RED AT BIRTH AND THE RED
+//! IS THE HONEST ALARM.** The cluster's CNI is kindnet, which enforces no
+//! NetworkPolicy. The policy in `yadgarhq/deploy`
+//! (`infra/estate-front/networkpolicy.yaml`) is therefore the SPECIFICATION this
+//! row tests rather than something the network applies, and until the CNI changes
+//! this row fails."
+//!
+//! **THE MEASUREMENT WAS RIGHT AND THE INFERENCE FROM IT WAS WRONG.** It is
+//! quoted rather than deleted, because a reader told only "that was wrong"
+//! re-measures the CNI, finds kindnet, and derives the same false conclusion.
+//! STILL TRUE: the CNI is kindnet and there is no Calico, Cilium or Weave.
+//! NO LONGER TRUE: that it enforces nothing. kindnetd `v20260528-9350166c` runs a
+//! `kube-network-policies` controller (ledger 684), and ledger 511 proved ingress
+//! enforcement live twelve times over.
+//!
+//! **THE EVIDENCE IS THIS ROW'S OWN RUNTIME.** Six smoke runs reached the
+//! confinement step and every one reported `ok` in exactly `18.02s` — six
+//! sequential 3000ms timeouts against the six addresses the four declared targets
+//! resolve to. A refused connection returns at once; a DROPPED one burns the whole
+//! timeout. `reference.toml` names the runs and says which policy refuses which
+//! target, because it is not one policy for all four.
+//!
+//! **THE DEADLINE MACHINERY BELOW IS LEFT STANDING AND IT IS STALE.**
+//! `reference.toml`'s `deadline_task` names ledger 614, which is WITHDRAWN
+//! (ADR-0594). Clearing those three fields changes what
+//! `the_deadline_is_a_real_date_and_the_task_is_named` asserts, and that test is
+//! deliberately not `#[ignore]`d, so it is a design call rather than a prose fix.
+//! Until it is made, the paragraph below describes a mechanism whose subject has
+//! closed.
 //!
 //! **THE RED CARRIES A DEADLINE, AND THAT IS NOT DECORATION.** ADR-0561's own
 //! doctrine is that a transient gap is a task with a deadline, never a recorded
@@ -98,11 +122,14 @@ fn red_at_birth_message(reference: &Reference, reachable: &[String]) -> String {
          \"Through the front door\" is not enforced by the network, so any suite bug or \
          compromised test dependency can bypass the edge while every other row reports green.\n\
          \n\
-         EXPECTED UNTIL THE CNI CHANGES. kindnet enforces no NetworkPolicy, so the policy in \
-         yadgarhq/deploy's infra/estate-front/ is the specification this row tests rather than \
-         something applied.\n\
+         NOT EXPECTED. This text used to say \"EXPECTED UNTIL THE CNI CHANGES. kindnet enforces \
+         no NetworkPolicy\" — the measurement was right and the inference was wrong. kindnetd \
+         v20260528-9350166c runs a kube-network-policies controller and this row has been \
+         observed green six times at exactly 18.02s, which is six 3000ms drops. So a connection \
+         that SUCCEEDS is a real regression: read estate-front-egress in yadgarhq/deploy and the \
+         target's own ingress policy in yadgar before believing the row is merely stale.\n\
          \n\
-         CLEARED BY: {} — {}\n\
+         CLEARED BY (STALE — this task is WITHDRAWN, see reference.toml): {} — {}\n\
          DUE:        {}\n\
          \n\
          If today is past that date, the gap has become a recorded state, which ADR-0561 forbids. \

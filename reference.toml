@@ -100,13 +100,45 @@ targets = [
 ]
 connect_timeout_ms = 3000
 
-# C-18 IS RED AT BIRTH AND THE RED CARRIES A DEADLINE. kindnet enforces no
-# NetworkPolicy (verified: the `kindnet` DaemonSet is the cluster's CNI), so the
-# policy in `yadgarhq/deploy`'s `infra/estate-front/` is the specification C-18
-# tests rather than something
-# the network applies. An indefinite red is the "recorded state" ADR-0561
-# forbids one level down, and it is what trains people to ignore red — so the
-# failure output names the task that will clear it and the date it should have.
+# THIS SAID "C-18 IS RED AT BIRTH AND THE RED CARRIES A DEADLINE. kindnet
+# enforces no NetworkPolicy (verified: the `kindnet` DaemonSet is the cluster's
+# CNI), so the policy in `yadgarhq/deploy`'s `infra/estate-front/` is the
+# specification C-18 tests rather than something the network applies."
+#
+# THE MEASUREMENT WAS RIGHT AND THE INFERENCE FROM IT WAS WRONG. The old text is
+# quoted rather than deleted, because a reader told only "that was wrong"
+# re-measures the CNI, finds kindnet, and derives the same false conclusion.
+#
+# STILL TRUE: the `kindnet` DaemonSet is this cluster's CNI, and there is no
+# Calico, Cilium or Weave. NO LONGER TRUE: that it enforces nothing. kindnetd
+# `v20260528-9350166c` runs a `kube-network-policies` controller (ledger 684),
+# and ledger 511 proved ingress enforcement live twelve times over.
+#
+# AND C-18 HAS NEVER ACTUALLY BEEN OBSERVED RED. Six smoke runs reached the
+# confinement step (`33985246084`, `33987703582`, `33987725928`, `33997388647`,
+# `33997423600`, `33999752662`) and every one reported `ok` in exactly `18.02s`
+# — six sequential 3000ms timeouts against the six addresses the four targets
+# above resolve to. A refused connection returns at once; a DROPPED one burns
+# the whole timeout. The row was written red-at-birth and measured green.
+#
+# WHAT ENFORCES EACH TARGET TODAY, because it is not one thing. `iam-db`,
+# `task-db` and `valkey` now also carry live ingress policies in `yadgar` that
+# name their real callers and exclude this runner. `iam-db-mariadb` carries
+# none — no policy selects `app.kubernetes.io/name: mariadb` — so that target
+# is refused by `estate-front-egress` alone, whose substance is EGRESS. The
+# 18.02s arithmetic is the evidence for egress enforcement here, and
+# `yadgarhq/docs`' `plans/chart-hardening.md` records it as exactly that.
+#
+# THE THREE FIELDS BELOW ARE STALE AND DELIBERATELY UNTOUCHED BY THIS
+# CORRECTION. `deadline_task` names ledger 614, which is WITHDRAWN (docs#51,
+# ADR-0594): plain NetworkPolicy suffices, kindnet enforces it, and Cilium is
+# ruled out under rootless podman. So the task that was to clear this red is
+# closed and the red it was to clear was never observed. Editing these three
+# values changes what `the_deadline_is_a_real_date_and_the_task_is_named`
+# asserts — that test is NOT `#[ignore]`d, so on 2026-10-04 this repository
+# goes red and blocks every merge. Retiring the deadline machinery, and deciding
+# whether C-18 becomes an ordinary hard check, is a design call for the
+# operator rather than a prose fix. It is filed as such.
 deadline_task = "yadgarhq/docs ledger 614"
 deadline_date = "2026-10-03"
 deadline_summary = "replace kindnet with a NetworkPolicy-enforcing CNI (nix repo, ADR-0480)"
