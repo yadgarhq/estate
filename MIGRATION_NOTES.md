@@ -108,7 +108,8 @@ TRUE: that it enforces nothing. kindnetd `v20260528-9350166c` runs a
 `kube-network-policies` controller (ledger 684), and ledger 511 proved ingress
 enforcement live twelve times over. C-18 itself has only ever been observed GREEN,
 nineteen runs on three separate days, each at exactly `18.02s`, which is six
-3000ms drops. `reference.toml` lists the run ids.
+3000ms drops against the four targets then declared (ledger 751 added three;
+about 30.0s now). `reference.toml` lists the run ids.
 
 **The change was kind with `disableDefaultCNI` plus Cilium or Calico, in the nix
 repo (ADR-0480). It is not happening.** `yadgarhq/docs` ledger 614 is WITHDRAWN

@@ -64,6 +64,8 @@ Stated here rather than left to be inferred.
   `kube-network-policies` controller and does enforce. Nineteen smoke runs, on
   three separate days, reported C-18 `ok` in exactly `18.02s` — six sequential
   3000ms timeouts, which is the shape of a drop rather than of a missing policy.
+  Those runs measured the four targets then declared; ledger 751 added three, so
+  an all-dropped run now takes about 30.0s on ten addresses.
   The `test result: ok ... finished in 18.02s` line was read out of the logs of
   runs `33985246084` and `34875568456`, the oldest and the newest;
   `reference.toml` lists all nineteen ids. The dated task the row used to name,
