@@ -1,5 +1,14 @@
 name: smoke
 
+# WHICH ROLL A RUN WAS ASKED ABOUT, ON THE RUNS LIST (ledger 675). `await-roll`
+# now refuses a roll it cannot confirm, so a red run is either a refusal or a
+# failing contract; the title is what tells a reader which roll it was before
+# they open it. Read from the payload or the dispatch inputs and never executed:
+# `run-name` is a title, not a shell.
+run-name: >-
+  smoke — ${{ github.event.client_payload.module || inputs.module || 'no roll named' }}
+  ${{ github.event.client_payload.tag || inputs.tag }} (${{ github.event_name }})
+
 # THE VERDICT AFTER EVERY ROLL. Ten rows, under a minute, run on the
 # `estate-front` runner inside the cluster so that the traffic reaches the edge
 # the way a real client's does.
@@ -163,8 +172,8 @@ jobs:
             echo "Outcome: \`$OUTCOME\`."
             echo ""
             if [ "$OUTCOME" = skipped ]; then
-              echo "C-18 did NOT run: an earlier step failed. This says nothing about"
-              echo "confinement. Read the roll confirmation above."
+              echo "C-18 did NOT run: an earlier step failed — the roll confirmation or the"
+              echo "front-door contracts. This says nothing about confinement."
               exit 0
             fi
             echo "This row has only ever been observed green: nineteen runs at 18.02s, six"

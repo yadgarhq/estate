@@ -50,13 +50,13 @@ Stated here rather than left to be inferred.
   mistake for a passing one.
 - **Nothing sends `module-rolled` yet.** This repository's half of the trigger is
   built; the other half is one step in `yadgarhq/actions`' `ci-release.yaml`.
-- **A roll of `iam`, `iam-db`, `task` or `task-db` cannot be confirmed.** Only the
-  gateway states its own release through the front door. For the other four,
+- **A roll of any module but the gateway cannot be confirmed.** Only the
+  gateway states its own release through the front door. For every other module,
   `await-roll` says on the run that it cannot confirm the roll and exits
   non-zero, so the rows do not run and no verdict is reported (ledger 675; it
   used to exit zero, and six runs certified the previous pods). A manual run
   with no module and no tag measures what is deployed. Stage 3's A-04 replaces
-  that refusal with digest parity for all five.
+  that refusal with digest parity for every module.
 - **C-18 was declared red, has only ever been observed green, and is now an
   ordinary hard check.** This entry read "**C-18 is red.** kindnet enforces no
   NetworkPolicy, so the policy in `yadgarhq/deploy`'s `infra/estate-front/` is the

@@ -10,7 +10,7 @@
 //! GATEWAY.** `server/discover` reports `crate::VERSION`, which `build.rs` takes
 //! from `YADGAR_GATEWAY_VERSION` and the `Containerfile` sets from the release
 //! version — so the running binary states its own release, unauthenticated, with
-//! no cluster access. The other four modules have no such front door. For them
+//! no cluster access. Every module but the gateway has no such front door. For them
 //! this program REFUSES: it says on the run that the roll cannot be confirmed and
 //! exits non-zero, so no row runs and no verdict is reported.
 //!
@@ -20,7 +20,7 @@
 //! green was measured six times as a false green (ledger 675): the rows ran in
 //! the two seconds after the message and certified the pre-roll estate. A roll
 //! dispatch naming nothing, and a roll named by half, refuse for the same reason.
-//! Stage 3's A-04 replaces the refusal with digest parity for all five.
+//! Stage 3's A-04 replaces the refusal with digest parity for every module.
 //!
 //! **COMPARE NORMALISED, NEVER RAW.** `ci-release.yaml`'s `detect` step strips
 //! the leading `v` (`VERSION="${VERSION#v}"`), so the tag is `v0.8.13` and the
@@ -138,7 +138,7 @@ enum Decision {
 /// recovery every refusal below names.
 fn decide(event: Option<&str>, module: &str, tag: &str) -> Decision {
     const RECOVERY: &str = "To get a verdict, wait for Argo CD to finish rolling (pin to \
-        serving measured 285-303s), then start `smoke` by `workflow_dispatch` with `module` and \
+        serving measured 285-290s; pin to pod start up to 303s), then start `smoke` by `workflow_dispatch` with `module` and \
         `tag` left empty. That run measures what is deployed and says so.";
 
     match (module.is_empty(), tag.is_empty()) {
@@ -160,7 +160,7 @@ fn decide(event: Option<&str>, module: &str, tag: &str) -> Decision {
              only the gateway states its own release version through the front door, so the \
              rows would measure pods this run cannot tell from the PREVIOUS ones. Stage 3's \
              annex row A-04 closes this by comparing the deployed image digest to the dispatched \
-             one, for all five modules. {RECOVERY}"
+             one, for every module. {RECOVERY}"
         )),
         (false, false) => Decision::PollGateway,
     }
