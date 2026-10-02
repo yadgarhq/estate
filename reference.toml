@@ -148,8 +148,11 @@ connect_timeout_ms = 3000
 # THOSE NINETEEN RUNS MEASURED THE OLD FOUR-TARGET LIST, and 18.02s is that
 # list's number, not this one's. With seven targets on ten addresses an
 # all-dropped run takes about 30.0s, and one accepting address finishes the row
-# red at about 27s. The first run after ledger 751 is the first reading of the
-# three added targets; until it is read, they are declared and unobserved.
+# red at about 27s. The first smoke run after ledger 751 that REACHES the C-18
+# step is the first reading of the three added targets; until it is read, they
+# are declared and unobserved. Not every run reaches it: once `await-roll`
+# refuses an unconfirmable roll (ledger 675), a non-gateway roll stops before
+# C-18 runs, so the reading comes from a gateway roll or a manual run.
 #
 # WHAT ENFORCES EACH TARGET TODAY, because it is not one thing. `iam-db`,
 # `task-db`, `project-db` and `valkey` now also carry live ingress policies in
@@ -160,7 +163,8 @@ connect_timeout_ms = 3000
 # they are refused by `estate-front-egress` alone, whose substance is EGRESS. The
 # 18.02s arithmetic is the evidence for egress enforcement on `iam-db-mariadb`,
 # and `yadgarhq/docs`' `plans/chart-hardening.md` records it as exactly that.
-# For the other two MariaDB targets the first post-751 run is the first reading.
+# For the other two MariaDB targets the first post-751 run that reaches the
+# C-18 step is the first reading.
 #
 # THERE WAS A DEADLINE HERE AND IT IS REMOVED, NOT RE-DATED (ADR-0687). This
 # file carried `deadline_task = "yadgarhq/docs ledger 614"`, `deadline_date =

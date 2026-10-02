@@ -30,7 +30,9 @@
 //! **THOSE NUMBERS ARE THE OLD LIST'S.** Ledger 751 added `task-db-mariadb`,
 //! `project-db` and `project-db-mariadb`: seven targets on ten addresses, so an
 //! all-dropped run now takes about 30.0s and one acceptance finishes red at
-//! about 27s. The nineteen runs say nothing about the three added targets.
+//! about 27s. The nineteen runs say nothing about the three added targets; the
+//! first smoke run that REACHES this step is their first reading, and once
+//! ledger 675 lands a non-gateway roll refuses before this step runs.
 //!
 //! **THE DEADLINE MACHINERY IS GONE, AND IT WAS REMOVED RATHER THAN RE-DATED
 //! (ADR-0687).** This file carried a paragraph reading "**THE RED CARRIES A
