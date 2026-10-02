@@ -171,9 +171,10 @@ jobs:
             echo ""
             echo "Outcome: \`$OUTCOME\`."
             echo ""
-            if [ "$OUTCOME" = skipped ]; then
-              echo "C-18 did NOT run: an earlier step failed — the roll confirmation or the"
-              echo "front-door contracts. This says nothing about confinement."
+            if [ "$OUTCOME" = skipped ] || [ "$OUTCOME" = cancelled ]; then
+              echo "C-18 did NOT run: an earlier step failed or the run was cancelled — the"
+              echo "checkout or toolchain, the roll confirmation, the front-door contracts, or"
+              echo "the 30-minute timeout. This says nothing about confinement."
               exit 0
             fi
             echo "This row has only ever been observed green: nineteen runs at 18.02s, six"

@@ -48,8 +48,10 @@ Stated here rather than left to be inferred.
   `ESTATE_PASSWORD`. All of it is in `MIGRATION_NOTES.md`. Until they exist `smoke.yaml` has no runner and no
   credential, and a dispatched run QUEUES rather than failing — which is easy to
   mistake for a passing one.
-- **Nothing sends `module-rolled` yet.** This repository's half of the trigger is
-  built; the other half is one step in `yadgarhq/actions`' `ci-release.yaml`.
+- **`module-rolled` is sent by every release.** This said "Nothing sends
+  `module-rolled` yet"; that is no longer true. The sender is the "ask estate for
+  a verdict on this roll" step in `yadgarhq/actions`' `ci-release.yaml`, which
+  posts `module`, `tag` and `digest` after the version pin is written.
 - **A roll of any module but the gateway cannot be confirmed.** Only the
   gateway states its own release through the front door. For every other module,
   `await-roll` says on the run that it cannot confirm the roll and exits
