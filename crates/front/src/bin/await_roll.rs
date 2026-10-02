@@ -58,23 +58,17 @@ async fn main() -> Result<()> {
     let module = std::env::var("ESTATE_ROLLED_MODULE").unwrap_or_default(); // ADR-0569-EXCEPTION: a run input, not a knob.
     let tag = std::env::var("ESTATE_ROLLED_TAG").unwrap_or_default(); // ADR-0569-EXCEPTION: a run input, not a knob.
 
-    if module.is_empty() || tag.is_empty() {
-        report(
-            "No roll was named, so there is nothing to wait for. This run measures whatever is \
-             currently deployed.",
-        );
-        return Ok(());
-    }
+    // WHICH EVENT STARTED THIS RUN, set by GitHub on every runner. It tells a
+    // roll dispatch that arrived naming nothing apart from a person asking to
+    // measure what is deployed. Off a runner it is absent, which is the second.
+    let event = std::env::var("GITHUB_EVENT_NAME").ok(); // ADR-0569-EXCEPTION: a run input, not a knob.
 
-    if module != "gateway" {
-        report(&format!(
-            "**This run could not confirm the roll it is measuring.** `{module}` was rolled to \
-             `{tag}`, and only the gateway states its own release version through the front door. \
-             This run's verdict may describe the PREVIOUS pods rather than the rolled code. \
-             Stage 3's annex row A-04 closes this by comparing the deployed image digest to the \
-             dispatched one, for all five modules."
-        ));
-        return Ok(());
+    match decide(event.as_deref(), &module, &tag) {
+        Decision::Proceed(message) => {
+            report(&message);
+            return Ok(());
+        }
+        Decision::PollGateway => {}
     }
 
     let want = tag.strip_prefix('v').unwrap_or(&tag).to_string();
@@ -104,6 +98,40 @@ async fn main() -> Result<()> {
          budget rather than the assertion — or the roll did not land.",
         BUDGET.as_secs()
     )
+}
+
+/// What this run may do about the roll it was handed.
+#[derive(Debug, PartialEq, Eq)]
+enum Decision {
+    /// Let the suite run, having said this on the run.
+    Proceed(String),
+    /// The gateway was rolled: poll the edge until it serves the tag.
+    PollGateway,
+}
+
+/// The decision, over values rather than over the process environment, so
+/// every arm is assertable without a runner.
+fn decide(event: Option<&str>, module: &str, tag: &str) -> Decision {
+    let _ = event;
+    if module.is_empty() || tag.is_empty() {
+        return Decision::Proceed(
+            "No roll was named, so there is nothing to wait for. This run measures whatever is \
+             currently deployed."
+                .to_string(),
+        );
+    }
+
+    if module != "gateway" {
+        return Decision::Proceed(format!(
+            "**This run could not confirm the roll it is measuring.** `{module}` was rolled to \
+             `{tag}`, and only the gateway states its own release version through the front door. \
+             This run's verdict may describe the PREVIOUS pods rather than the rolled code. \
+             Stage 3's annex row A-04 closes this by comparing the deployed image digest to the \
+             dispatched one, for all five modules."
+        ));
+    }
+
+    Decision::PollGateway
 }
 
 /// The version the thing answering on the edge says it is.
