@@ -1,5 +1,14 @@
 name: smoke
 
+# WHICH ROLL A RUN WAS ASKED ABOUT, ON THE RUNS LIST (ledger 675). `await-roll`
+# now refuses a roll it cannot confirm, so a red run is either a refusal or a
+# failing contract; the title is what tells a reader which roll it was before
+# they open it. Read from the payload or the dispatch inputs and never executed:
+# `run-name` is a title, not a shell.
+run-name: >-
+  smoke — ${{ github.event.client_payload.module || inputs.module || 'no roll named' }}
+  ${{ github.event.client_payload.tag || inputs.tag }} (${{ github.event_name }})
+
 # THE VERDICT AFTER EVERY ROLL. Ten rows, under a minute, run on the
 # `estate-front` runner inside the cluster so that the traffic reaches the edge
 # the way a real client's does.
@@ -31,7 +40,7 @@ on:
   workflow_dispatch:
     inputs:
       module:
-        description: "The module that was rolled, if any. `gateway` can be confirmed from the front door; the other four cannot."
+        description: "The module that was rolled, if any. Only `gateway` can be confirmed from the front door; naming another module refuses the run. Leave module and tag empty to measure what is deployed."
         type: string
         required: false
         default: ""
@@ -94,7 +103,11 @@ jobs:
       # `client_payload` is written by whoever sent the dispatch, and `${{ }}`
       # inside a `run:` block is a shell injection — the class zizmor audits for.
       # Every value below is read as `$VAR` by a program that treats it as data.
-      - name: wait for the rolled code, or say it could not be confirmed
+      # A ROLL THIS STEP CANNOT CONFIRM FAILS IT, and the rows do not run
+      # (ledger 675). It used to print "could not confirm" and exit 0, so the
+      # rows certified the previous pods and the run went green — six measured
+      # false greens. Nothing reads this workflow's conclusion but a person.
+      - name: wait for the rolled code, or refuse a verdict it cannot confirm
         env:
           ESTATE_ROLLED_MODULE: ${{ github.event.client_payload.module || inputs.module }}
           ESTATE_ROLLED_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
@@ -158,6 +171,12 @@ jobs:
             echo ""
             echo "Outcome: \`$OUTCOME\`."
             echo ""
+            if [ "$OUTCOME" = skipped ] || [ "$OUTCOME" = cancelled ]; then
+              echo "C-18 did NOT run: an earlier step failed or the run was cancelled — the"
+              echo "checkout or toolchain, the roll confirmation, the front-door contracts, or"
+              echo "the 30-minute timeout. This says nothing about confinement."
+              exit 0
+            fi
             echo "This row has only ever been observed green: nineteen runs at 18.02s, six"
             echo "3000ms drops on the old four targets. Seven targets on ten addresses is about"
             echo "30.0s. It is an ordinary hard check: a red here fails this"

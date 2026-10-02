@@ -87,8 +87,9 @@ They are not here because their stage is not here.
 - Stage 3: the whole in-cluster annex (A-01..A-10), the per-run ephemeral
   identity, and with it C-08 and C-09 — the enrolment and replay contracts,
   which spend a single-use secret and therefore need that identity.
-- Stage 3 also retires stage 1's unconfirmed-roll sentence: A-04 compares the
-  deployed image digest to the dispatched one for all five modules, where today
+- Stage 3 also retires stage 1's unconfirmed-roll refusal (a non-gateway roll
+  fails `await-roll` and reports no verdict; ledger 675): A-04 compares the
+  deployed image digest to the dispatched one for every module, where today
   only the gateway can be confirmed from the front door.
 - Stage 4: the parity auditor. Until it exists, `PROTO_VERSION` is deliberately
   absent from this repository and **estate is not yet visible to the auditor as

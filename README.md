@@ -48,13 +48,17 @@ Stated here rather than left to be inferred.
   `ESTATE_PASSWORD`. All of it is in `MIGRATION_NOTES.md`. Until they exist `smoke.yaml` has no runner and no
   credential, and a dispatched run QUEUES rather than failing — which is easy to
   mistake for a passing one.
-- **Nothing sends `module-rolled` yet.** This repository's half of the trigger is
-  built; the other half is one step in `yadgarhq/actions`' `ci-release.yaml`.
-- **A roll of `iam`, `iam-db`, `task` or `task-db` cannot be confirmed.** Only the
-  gateway states its own release through the front door. For the other four,
-  `await-roll` prints on the run itself that the verdict may describe the
-  previous pods. Stage 3's A-04 replaces that sentence with digest parity for all
-  five.
+- **`module-rolled` is sent by every release.** This said "Nothing sends
+  `module-rolled` yet"; that is no longer true. The sender is the "ask estate for
+  a verdict on this roll" step in `yadgarhq/actions`' `ci-release.yaml`, which
+  posts `module`, `tag` and `digest` after the version pin is written.
+- **A roll of any module but the gateway cannot be confirmed.** Only the
+  gateway states its own release through the front door. For every other module,
+  `await-roll` says on the run that it cannot confirm the roll and exits
+  non-zero, so the rows do not run and no verdict is reported (ledger 675; it
+  used to exit zero, and six runs certified the previous pods). A manual run
+  with no module and no tag measures what is deployed. Stage 3's A-04 replaces
+  that refusal with digest parity for every module.
 - **C-18 was declared red, has only ever been observed green, and is now an
   ordinary hard check.** This entry read "**C-18 is red.** kindnet enforces no
   NetworkPolicy, so the policy in `yadgarhq/deploy`'s `infra/estate-front/` is the
