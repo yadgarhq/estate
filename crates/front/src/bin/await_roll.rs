@@ -11,11 +11,16 @@
 //! from `YADGAR_GATEWAY_VERSION` and the `Containerfile` sets from the release
 //! version — so the running binary states its own release, unauthenticated, with
 //! no cluster access. The other four modules have no such front door. For them
-//! this program prints, on the run itself, that the rolled digest could not be
-//! confirmed as serving and that the verdict may describe the previous pods. An
-//! unconfirmed roll is STATED on the run that could not confirm it, never left
-//! for a reader to infer. Stage 3's A-04 replaces both halves with digest parity
-//! for all five.
+//! this program REFUSES: it says on the run that the roll cannot be confirmed and
+//! exits non-zero, so no row runs and no verdict is reported.
+//!
+//! **THIS SAID "this program prints, on the run itself, that the rolled digest
+//! could not be confirmed as serving and that the verdict may describe the
+//! previous pods" — and then exited zero.** Stating the doubt on a run that ends
+//! green was measured six times as a false green (ledger 675): the rows ran in
+//! the two seconds after the message and certified the pre-roll estate. A roll
+//! dispatch naming nothing, and a roll named by half, refuse for the same reason.
+//! Stage 3's A-04 replaces the refusal with digest parity for all five.
 //!
 //! **COMPARE NORMALISED, NEVER RAW.** `ci-release.yaml`'s `detect` step strips
 //! the leading `v` (`VERSION="${VERSION#v}"`), so the tag is `v0.8.13` and the
@@ -68,6 +73,10 @@ async fn main() -> Result<()> {
             report(&message);
             return Ok(());
         }
+        Decision::Refuse(message) => {
+            report(&message);
+            anyhow::bail!("no verdict: the roll this run was handed cannot be confirmed (above)");
+        }
         Decision::PollGateway => {}
     }
 
@@ -105,33 +114,56 @@ async fn main() -> Result<()> {
 enum Decision {
     /// Let the suite run, having said this on the run.
     Proceed(String),
+    /// Report no verdict: say why on the run and exit non-zero.
+    Refuse(String),
     /// The gateway was rolled: poll the edge until it serves the tag.
     PollGateway,
 }
 
 /// The decision, over values rather than over the process environment, so
 /// every arm is assertable without a runner.
+///
+/// **A VERDICT THIS RUN CANNOT ATTRIBUTE IS REFUSED, NOT REPORTED** (ledger
+/// 675, `yadgarhq/docs` `plans/settled-state-smoke-gate.md`). Arms 1 and 2 used
+/// to print that they could not confirm the roll and then return `Ok`, so nine
+/// rows ran and the workflow reported SUCCESS about the previous pods — six
+/// measured false greens. `smoke.yaml` is this binary's only caller, and the
+/// only reader of smoke's conclusion is a person: `ci-release.yaml` checks that
+/// a run was CREATED and never reads how it ended. So a non-zero exit breaks no
+/// machine caller. It stops the rows, and the run ends red with this text.
+///
+/// The one arm that still proceeds without waiting is a run nobody tied to a
+/// roll — `workflow_dispatch` with no module and no tag, or the binary off a
+/// runner. That is a request to measure what is deployed, and it is the
+/// recovery every refusal below names.
 fn decide(event: Option<&str>, module: &str, tag: &str) -> Decision {
-    let _ = event;
-    if module.is_empty() || tag.is_empty() {
-        return Decision::Proceed(
+    const RECOVERY: &str = "To get a verdict, wait for Argo CD to finish rolling (pin to \
+        serving measured 285-303s), then start `smoke` by `workflow_dispatch` with `module` and \
+        `tag` left empty. That run measures what is deployed and says so.";
+
+    match (module.is_empty(), tag.is_empty()) {
+        (true, true) if event == Some("repository_dispatch") => Decision::Refuse(format!(
+            "**This run refuses to report a verdict.** A `module-rolled` dispatch arrived naming \
+             no module and no tag, so a roll happened and this run cannot say which. {RECOVERY}"
+        )),
+        (true, true) => Decision::Proceed(
             "No roll was named, so there is nothing to wait for. This run measures whatever is \
              currently deployed."
                 .to_string(),
-        );
+        ),
+        (true, false) | (false, true) => Decision::Refuse(format!(
+            "**This run refuses to report a verdict.** A roll was half named — module \
+             `{module}`, tag `{tag}` — and a roll needs both to be waited for. {RECOVERY}"
+        )),
+        (false, false) if module != "gateway" => Decision::Refuse(format!(
+            "**This run refuses to report a verdict.** `{module}` was rolled to `{tag}`, and \
+             only the gateway states its own release version through the front door, so the \
+             rows would measure pods this run cannot tell from the PREVIOUS ones. Stage 3's \
+             annex row A-04 closes this by comparing the deployed image digest to the dispatched \
+             one, for all five modules. {RECOVERY}"
+        )),
+        (false, false) => Decision::PollGateway,
     }
-
-    if module != "gateway" {
-        return Decision::Proceed(format!(
-            "**This run could not confirm the roll it is measuring.** `{module}` was rolled to \
-             `{tag}`, and only the gateway states its own release version through the front door. \
-             This run's verdict may describe the PREVIOUS pods rather than the rolled code. \
-             Stage 3's annex row A-04 closes this by comparing the deployed image digest to the \
-             dispatched one, for all five modules."
-        ));
-    }
-
-    Decision::PollGateway
 }
 
 /// The version the thing answering on the edge says it is.
@@ -162,6 +194,81 @@ fn report(message: &str) {
             .open(path)
         {
             let _ = writeln!(fh, "### Roll confirmation\n\n{message}\n");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DISPATCH: Option<&str> = Some("repository_dispatch");
+    const MANUAL: Option<&str> = Some("workflow_dispatch");
+
+    fn refused(d: &Decision) -> bool {
+        matches!(d, Decision::Refuse(_))
+    }
+
+    /// Arm 2, the measured false green (ledger 675): a non-gateway roll cannot be
+    /// confirmed from the front door, so the run must refuse to report a verdict
+    /// rather than let nine rows certify the previous pods.
+    #[test]
+    fn a_roll_that_cannot_be_confirmed_refuses_the_verdict() {
+        for module in ["iam", "iam-db", "task", "task-db", "project"] {
+            let d = decide(DISPATCH, module, "v1.2.3");
+            assert!(refused(&d), "{module}: {d:?}");
+            let d = decide(MANUAL, module, "v1.2.3");
+            assert!(refused(&d), "{module} named by hand: {d:?}");
+        }
+    }
+
+    /// Arm 1 on a roll dispatch: `module-rolled` arrived naming no roll. Something
+    /// rolled and this run cannot say what, so it is not a "measure what is
+    /// deployed" run either.
+    #[test]
+    fn a_roll_dispatch_that_names_nothing_refuses_the_verdict() {
+        assert!(refused(&decide(DISPATCH, "", "")));
+        assert!(refused(&decide(DISPATCH, "task", "")));
+        assert!(refused(&decide(DISPATCH, "", "v1.2.3")));
+    }
+
+    /// Half a roll named by hand is an operator mistake, not a request to measure
+    /// what is deployed: refusing says so, proceeding would hide it.
+    #[test]
+    fn half_a_roll_named_by_hand_refuses_the_verdict() {
+        assert!(refused(&decide(MANUAL, "gateway", "")));
+        assert!(refused(&decide(MANUAL, "", "v1.2.3")));
+    }
+
+    /// The one honest no-wait arm: a person asked to measure what is deployed, or
+    /// the binary runs off a runner. This is also the recovery path the refusals
+    /// name, so it must stay open.
+    #[test]
+    fn a_manual_run_naming_no_roll_measures_what_is_deployed() {
+        assert!(matches!(decide(MANUAL, "", ""), Decision::Proceed(_)));
+        assert!(matches!(decide(None, "", ""), Decision::Proceed(_)));
+    }
+
+    /// Arm 3 is unchanged: the gateway is confirmed by polling the edge.
+    #[test]
+    fn a_gateway_roll_is_polled() {
+        assert_eq!(decide(DISPATCH, "gateway", "v0.9.3"), Decision::PollGateway);
+        assert_eq!(decide(MANUAL, "gateway", "v0.9.3"), Decision::PollGateway);
+    }
+
+    /// Every refusal names the way back to a verdict, because a red with no
+    /// next step is read as a broken suite.
+    #[test]
+    fn every_refusal_names_the_recovery() {
+        for d in [
+            decide(DISPATCH, "task", "v1.2.3"),
+            decide(DISPATCH, "", ""),
+            decide(MANUAL, "gateway", ""),
+        ] {
+            let Decision::Refuse(message) = d else {
+                panic!("expected a refusal, got {d:?}");
+            };
+            assert!(message.contains("workflow_dispatch"), "{message}");
         }
     }
 }
