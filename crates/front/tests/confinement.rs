@@ -19,13 +19,18 @@
 //! **THE EVIDENCE IS THIS ROW'S OWN RUNTIME.** Nineteen smoke runs, on three
 //! separate days, have reached the confinement step, and every one reported `ok`
 //! in exactly `18.02s` — six sequential 3000ms timeouts against the six addresses
-//! the four declared targets resolve to. A refused connection returns at once;
+//! the four targets then declared resolve to. A refused connection returns at once;
 //! a DROPPED one burns the whole timeout, and that is why the runtime is the
 //! reading rather than the step's conclusion: had any one address ACCEPTED, that
 //! connect would have returned immediately, this row would have FAILED, and the
 //! step would have taken about fifteen seconds. `reference.toml` names all
 //! nineteen runs and says which policy refuses which target, because it is not
-//! one policy for all four.
+//! one policy for all of them.
+//!
+//! **THOSE NUMBERS ARE THE OLD LIST'S.** Ledger 751 added `task-db-mariadb`,
+//! `project-db` and `project-db-mariadb`: seven targets on ten addresses, so an
+//! all-dropped run now takes about 30.0s and one acceptance finishes red at
+//! about 27s. The nineteen runs say nothing about the three added targets.
 //!
 //! **THE DEADLINE MACHINERY IS GONE, AND IT WAS REMOVED RATHER THAN RE-DATED
 //! (ADR-0687).** This file carried a paragraph reading "**THE RED CARRIES A
@@ -137,8 +142,9 @@ fn c18_failure_message(reachable: &[String]) -> String {
          \"CLEARED BY / DUE\" pair naming yadgarhq/docs ledger 614 and 2026-10-03. The \
          measurement was right and the inference from it was wrong: kindnetd \
          v20260528-9350166c runs a kube-network-policies controller, ledger 614 is WITHDRAWN, \
-         and this row has been observed green nineteen times at exactly 18.02s, which is six \
-         3000ms drops. So there is no deadline to escalate and nothing to wait for, and a \
+         and this row was observed green nineteen times at exactly 18.02s, six 3000ms drops \
+         against the four targets it then held (ledger 751 added three more, about 30.0s). So \
+         there is no deadline to escalate and nothing to wait for, and a \
          connection that SUCCEEDS is a real regression: read estate-front-egress in \
          yadgarhq/deploy and the target's own ingress policy in yadgar before believing this \
          row is merely stale."

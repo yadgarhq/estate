@@ -92,10 +92,24 @@ refusal_status = 401
 # 50051, `iam` and `task` serve 50052, each `-db` has its own MariaDB Service in
 # the `yadgar` namespace, and `valkey` serves 6379. There is no
 # `mariadb.mariadb-system.svc`: that namespace holds only the operator webhook.
+#
+# THREE TARGETS ADDED 2026-10-02 (ledger 751): `task-db-mariadb`, `project-db`
+# and `project-db-mariadb`. The list named `task-db` without its MariaDB and
+# named no `project-db` face at all, so the runner's reach to two databases and
+# one gRPC tier was never measured. Measured that day (`kubectl -n yadgar get
+# svc` and `get endpointslices`): `project-db` serves 50051 (headless, two
+# endpoints), and `task-db-mariadb` and `project-db-mariadb` serve 3306 (one
+# endpoint each). The seven targets resolve to TEN addresses: `iam-db`,
+# `task-db` and `project-db` two each, the three MariaDB Services and `valkey`
+# one each. `harness/src/reference.rs` refuses a `-db` named without its
+# `-mariadb`, which is the half of this gap a test can see.
 targets = [
   "iam-db.yadgar.svc.cluster.local:50051",
   "task-db.yadgar.svc.cluster.local:50051",
+  "project-db.yadgar.svc.cluster.local:50051",
   "iam-db-mariadb.yadgar.svc.cluster.local:3306",
+  "task-db-mariadb.yadgar.svc.cluster.local:3306",
+  "project-db-mariadb.yadgar.svc.cluster.local:3306",
   "valkey.yadgar.svc.cluster.local:6379",
 ]
 connect_timeout_ms = 3000
@@ -117,8 +131,9 @@ connect_timeout_ms = 3000
 # AND C-18 HAS NEVER ACTUALLY BEEN OBSERVED RED. NINETEEN smoke runs have now
 # reached the confinement step, on three separate days, and every one reported
 # `ok` in exactly `18.02s` — six sequential 3000ms timeouts against the six
-# addresses the four targets above resolve to. A refused connection returns at
-# once; a DROPPED one burns the whole timeout, so the 18.02s IS the reading: had
+# addresses the FOUR targets this list then held resolve to. A refused
+# connection returns at once; a DROPPED one burns the whole timeout, so the
+# 18.02s IS the reading: had
 # any one address accepted, that connect would have returned at once, the row
 # would have FAILED, and the step would have taken about fifteen seconds.
 # 2026-09-05: `33985246084`, `33987703582`, `33987725928`, `33997388647`,
@@ -130,13 +145,22 @@ connect_timeout_ms = 3000
 # the oldest and the newest, rather than inferred from the step's conclusion.
 # The row was written red-at-birth and has only ever measured green.
 #
+# THOSE NINETEEN RUNS MEASURED THE OLD FOUR-TARGET LIST, and 18.02s is that
+# list's number, not this one's. With seven targets on ten addresses an
+# all-dropped run takes about 30.0s, and one accepting address finishes the row
+# red at about 27s. The first run after ledger 751 is the first reading of the
+# three added targets; until it is read, they are declared and unobserved.
+#
 # WHAT ENFORCES EACH TARGET TODAY, because it is not one thing. `iam-db`,
-# `task-db` and `valkey` now also carry live ingress policies in `yadgar` that
-# name their real callers and exclude this runner. `iam-db-mariadb` carries
-# none — no policy selects `app.kubernetes.io/name: mariadb` — so that target
-# is refused by `estate-front-egress` alone, whose substance is EGRESS. The
-# 18.02s arithmetic is the evidence for egress enforcement here, and
-# `yadgarhq/docs`' `plans/chart-hardening.md` records it as exactly that.
+# `task-db`, `project-db` and `valkey` now also carry live ingress policies in
+# `yadgar` that name their real callers and exclude this runner
+# (`project-db-ingress` admits only `app: project` on 50051 and the
+# `observability` namespace on 9090, read 2026-10-02). The three MariaDB
+# targets carry none — no policy selects `app.kubernetes.io/name: mariadb` — so
+# they are refused by `estate-front-egress` alone, whose substance is EGRESS. The
+# 18.02s arithmetic is the evidence for egress enforcement on `iam-db-mariadb`,
+# and `yadgarhq/docs`' `plans/chart-hardening.md` records it as exactly that.
+# For the other two MariaDB targets the first post-751 run is the first reading.
 #
 # THERE WAS A DEADLINE HERE AND IT IS REMOVED, NOT RE-DATED (ADR-0687). This
 # file carried `deadline_task = "yadgarhq/docs ledger 614"`, `deadline_date =

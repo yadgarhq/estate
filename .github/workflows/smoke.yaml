@@ -125,8 +125,9 @@ jobs:
       # kindnetd `v20260528-9350166c` runs a `kube-network-policies` controller
       # (ledger 684). NINETEEN RUNS OF THIS VERY STEP, on three separate days,
       # reported `ok` in exactly `18.02s` — six 3000ms drops against the six
-      # addresses the four declared targets resolve to. The row has never been
-      # observed red. `reference.toml` lists the nineteen run ids.
+      # addresses the four targets then declared resolve to. The row has never been
+      # observed red. `reference.toml` lists the nineteen run ids. Ledger 751 added
+      # three targets: seven on ten addresses, so all-dropped is now about 30.0s.
       #
       # `continue-on-error` IS GONE (ADR-0687). This step used to carry it, with the
       # note "removing it is deliberately NOT part of the prose correction … the
@@ -135,7 +136,8 @@ jobs:
       # workflow reports nothing. C-18 is an ORDINARY HARD CHECK — a red here fails
       # this run, which is the point. The runtime is what makes that safe to gate on:
       # had any target accepted, the connect would return at once, the row would fail,
-      # and the step would finish in about fifteen seconds rather than 18.02s.
+      # and the step would finish early — about 27s rather than 30.0s for the
+      # seven-target list (about fifteen rather than 18.02s for the old four).
       - name: C-18 confinement — nothing inside the cluster is reachable
         id: confinement
         run: cargo test --locked --test confinement -- --ignored --nocapture
@@ -156,8 +158,9 @@ jobs:
             echo ""
             echo "Outcome: \`$OUTCOME\`."
             echo ""
-            echo "This row has only ever been observed green, across nineteen runs, in exactly"
-            echo "18.02s — six 3000ms drops. It is an ordinary hard check: a red here fails this"
+            echo "This row has only ever been observed green: nineteen runs at 18.02s, six"
+            echo "3000ms drops on the old four targets. Seven targets on ten addresses is about"
+            echo "30.0s. It is an ordinary hard check: a red here fails this"
             echo "run and is a real regression, not the old \`kindnet enforces nothing\`"
             echo "expectation, which was false. There is no deadline behind it and nothing to"
             echo "wait for. See UNOBSERVED.md and reference.toml."

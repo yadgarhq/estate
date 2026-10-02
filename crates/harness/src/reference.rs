@@ -171,6 +171,39 @@ mod tests {
         );
     }
 
+    /// Every database tier C-18 names is named on BOTH of its faces: the gRPC
+    /// Service `<tier>` and the MariaDB Service `<tier>-mariadb` behind it.
+    ///
+    /// Ledger 751: the list named `task-db` and not `task-db-mariadb`, so the
+    /// runner's reach to one database went unmeasured while the row reported
+    /// green. The pairing is structural, not a list of names — a service name in
+    /// a `.rs` file is the compiled-in dependency D80's gate refuses — so it
+    /// catches a missing `-mariadb` sibling. It cannot catch a tier that is
+    /// missing on both faces; `reference.toml` records the live Service list
+    /// the targets were measured against.
+    #[test]
+    fn every_confined_database_tier_is_named_with_its_mariadb() {
+        const MARIADB: &str = "-mariadb";
+        let r = Reference::load().expect("reference.toml parses");
+        let hosts: Vec<&str> = r
+            .confinement
+            .targets
+            .iter()
+            .map(|t| t.split(['.', ':']).next().unwrap_or(t))
+            .collect();
+        for host in &hosts {
+            let tier = host.strip_suffix(MARIADB).unwrap_or(host);
+            let mariadb = format!("{tier}{MARIADB}");
+            if host.ends_with(MARIADB) || tier.ends_with("-db") {
+                assert!(
+                    hosts.contains(&tier) && hosts.contains(&mariadb.as_str()),
+                    "C-18 names `{host}` but not both `{tier}` and `{mariadb}`; a database tier \
+                     confined on one face is reachable-unmeasured on the other"
+                );
+            }
+        }
+    }
+
     /// The root is committed and is a certificate.
     #[test]
     fn the_committed_root_is_readable_pem() {
