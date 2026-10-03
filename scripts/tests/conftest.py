@@ -3,6 +3,13 @@
 The fake answers only the URLs a test declares. An undeclared URL raises rather
 than answering 404, because a 404 is itself a case under test (the token arm)
 and a fake that invents one would let a wrong URL pass as a refusal.
+
+THE FIELD NAMES ARE GITHUB'S, measured 2026-10-03 on a real pair from
+`yadgarhq/actions` (artifact 11256977198, run 37076269754): an artifact's
+`workflow_run` carries `id`, `repository_id`, `head_repository_id` and
+`head_branch`; a run carries `path` as `.github/workflows/<file>.yaml`,
+`head_branch` and `head_repository.id`. A wrong name here would filter out
+every real verdict and leave smoke "waiting" forever, green and silent.
 """
 
 from __future__ import annotations
