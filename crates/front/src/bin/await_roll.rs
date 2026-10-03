@@ -35,8 +35,8 @@ use serde_json::json;
 
 /// Argo CD sync latency is why this polls rather than asserting once. The number
 /// is a starting point to tune against observed sync times, not a measurement.
-const BUDGET: Duration = Duration::from_secs(600);
-const INTERVAL: Duration = Duration::from_secs(5);
+const BUDGET: Duration = Duration::from_secs(600); // ADR-0569-EXCEPTION(CC): under smoke.yaml's 30-minute job timeout, leaving room for the build and the rows that run after the wait.
+const INTERVAL: Duration = Duration::from_secs(5); // ADR-0569-EXCEPTION(CC): poll cadence sized against BUDGET, not chosen on its own.
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -60,13 +60,13 @@ async fn main() -> Result<()> {
     // named", and GitHub Actions produces the empty one for an unset
     // `client_payload` key — so distinguishing them would be two messages for one
     // state.
-    let module = std::env::var("ESTATE_ROLLED_MODULE").unwrap_or_default(); // ADR-0569-EXCEPTION: a run input, not a knob.
-    let tag = std::env::var("ESTATE_ROLLED_TAG").unwrap_or_default(); // ADR-0569-EXCEPTION: a run input, not a knob.
+    let module = std::env::var("ESTATE_ROLLED_MODULE").unwrap_or_default(); // ADR-0569-EXCEPTION(ABS): a run input, not a knob.
+    let tag = std::env::var("ESTATE_ROLLED_TAG").unwrap_or_default(); // ADR-0569-EXCEPTION(ABS): a run input, not a knob.
 
     // WHICH EVENT STARTED THIS RUN, set by GitHub on every runner. It tells a
     // roll dispatch that arrived naming nothing apart from a person asking to
     // measure what is deployed. Off a runner it is absent, which is the second.
-    let event = std::env::var("GITHUB_EVENT_NAME").ok(); // ADR-0569-EXCEPTION: a run input, not a knob.
+    let event = std::env::var("GITHUB_EVENT_NAME").ok(); // ADR-0569-EXCEPTION(ABS): a run input, not a knob.
 
     match decide(event.as_deref(), &module, &tag) {
         Decision::Proceed(message) => {

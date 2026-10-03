@@ -116,7 +116,7 @@ impl Reference {
         // has to be: the gate rejoins a `cargo fmt`-broken method chain before
         // matching, then filters the JOINED line for the marker — so a marker on
         // the line above is not on the text the filter reads.
-        std::env::var("ESTATE_EDGE_PORT") // ADR-0569-EXCEPTION: see the doc comment above.
+        std::env::var("ESTATE_EDGE_PORT") // ADR-0569-EXCEPTION(CC): overrides reference.toml's edge.port, a declared value, not a default nobody chose.
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(self.edge.port)

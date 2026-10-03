@@ -24,11 +24,7 @@ pub struct Edge {
 /// floor and pays Argon2id on a username it has never seen, so a bound near the
 /// healthy latency would fail rows for being slow rather than for being wrong.
 ///
-/// **ADR-0569-EXCEPTION(CC) — THIS IS NOT CONFIGURATION.** It bounds this test
-/// harness's own HTTP client, not a deployed binary. Nothing outside this
-/// crate ever reads it, so there is no chart value or env var it could have
-/// ONE source in.
-const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30); // ADR-0569-EXCEPTION(CC): see doc comment above.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30); // ADR-0569-EXCEPTION(CC): sized against iam's login response-time floor and its Argon2id cost on an unseen username, not a knob.
 
 fn builder(reference: &Reference) -> Result<reqwest::ClientBuilder> {
     let mut b = reqwest::Client::builder()

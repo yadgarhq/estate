@@ -40,8 +40,8 @@ pub fn project_id() -> String {
 /// or configures — exactly the "value that is not configuration at all"
 /// ADR-0569's own consequences call out.
 pub fn run_key() -> String {
-    let id = std::env::var("GITHUB_RUN_ID").ok(); // ADR-0569-EXCEPTION(ABS): see doc comment above.
-    let attempt = std::env::var("GITHUB_RUN_ATTEMPT").ok(); // ADR-0569-EXCEPTION(ABS): see doc comment above.
+    let id = std::env::var("GITHUB_RUN_ID").ok(); // ADR-0569-EXCEPTION(ABS): absent means off-runner, not a misconfigured knob.
+    let attempt = std::env::var("GITHUB_RUN_ATTEMPT").ok(); // ADR-0569-EXCEPTION(ABS): absent means off-runner; the local-<pid> fallback is a namespace, not a default.
     run_key_from(id.as_deref(), attempt.as_deref())
 }
 
