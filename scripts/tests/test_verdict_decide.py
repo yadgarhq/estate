@@ -285,3 +285,18 @@ def test_a_newer_verdict_for_another_epoch_does_not_hide_the_match(world):
 def test_the_listing_repository_must_be_the_runs_head_repository(world):
     world.add_verdict(7, green(), head_repo=VERIFY_ID + 1, run_head_repo=VERIFY_ID + 1)
     assert run(world).summary.startswith("waiting")
+
+
+def test_a_verdict_naming_a_newer_anchor_for_the_same_key_is_red():
+    # The walk passed b (same K) on its way to a; a gate naming b disagrees on A.
+    from test_verdict_anchor import C, DATES, NEW, T, APP
+    from conftest import FakeGitHub, commit, fixture_files, SHA_D41 as _
+    gh = FakeGitHub()
+    hist = [commit(C["b"], DATES["b"]), commit(C["a"], DATES["a"])]
+    pin = fixture_files(_)[verdict.PIN_PATH]
+    files = {(T, C["b"]): NEW[T], (APP, C["b"]): NEW[APP], (verdict.PIN_PATH, C["b"]): pin,
+             (T, C["a"]): NEW[T], (APP, C["a"]): NEW[APP]}
+    gh.argocd(C["b"], {T: hist, APP: hist}, files)
+    gh.add_verdict(7, green(A=C["b"], S=C["b"]))
+    with pytest.raises(verdict.Red, match="anchor computation disagrees"):
+        run(gh, now=datetime(2026, 10, 2, 10, 30, tzinfo=timezone.utc))

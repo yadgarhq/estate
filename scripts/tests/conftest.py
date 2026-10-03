@@ -80,8 +80,16 @@ class FakeGitHub:
         raw = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.routes[url] = verdict.Response(status, raw, location)
 
-    def argocd(self, head: str, history: dict[str, list[dict]], files: dict[tuple[str, str], bytes]):
+    def argocd(self, head: str, history: dict[str, list[dict]], files: dict[tuple[str, str], bytes],
+               mainline: list[dict] | None = None):
+        """`mainline` is the unfiltered commits page; by default the union of the
+        path lists, newest first, every commit with one parent."""
         self.head = head
+        if mainline is None:
+            seen = {it["sha"]: it for items in history.values() for it in items}
+            mainline = sorted(seen.values(), key=lambda it: it["commit"]["committer"]["date"], reverse=True)
+        q = urllib.parse.urlencode({"sha": head, "per_page": 100})
+        self.route(f"/repos/{verdict.ARGOCD}/commits?{q}", mainline)
         self.route(f"/repos/{verdict.ARGOCD}/branches/main", {"commit": {"sha": head}})
         for path, items in history.items():
             q = urllib.parse.urlencode({"sha": head, "path": path, "per_page": 100})

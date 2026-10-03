@@ -285,12 +285,32 @@ def merge_history(lists: dict[str, list[dict]]) -> list[str]:
     return merged
 
 
-def find_anchor(gh: GitHub, head: str, now: dict[str, bytes], key_now: str) -> tuple[str, datetime]:
-    """A and its committer date: walking newest-first, the last commit whose K still equals `key_now`."""
+def check_no_hidden_merge(gh: GitHub, head: str, oldest: str) -> None:
+    """Refuse when a merge commit sits in the walked range, whatever the path filter showed.
+
+    The path-filtered commits API simplifies history: a merge commit TREESAME to
+    one parent is hidden (measured on octocat/Hello-World 7fd1a60, path README:
+    only the side commit is listed), while argocd's `git log --full-history`
+    walk lists it. The two sides could then name different anchors, and estate
+    would wait for a verdict that never comes. One unfiltered page, newest first,
+    down to the oldest commit the walk saw: any commit with two parents is red.
+    """
+    q = urllib.parse.urlencode({"sha": head, "per_page": PAGE})
+    for item in gh.json(f"/repos/{ARGOCD}/commits?{q}"):
+        if len(item.get("parents", [])) > 1:
+            raise Red(f"merge commit {item['sha']} on argocd main at or after {oldest}; argocd main is squash-only")
+        if item["sha"] == oldest:
+            return
+    raise Red(f"{oldest} is not within the newest {PAGE} commits of argocd main; cannot rule out a merge commit")
+
+
+def find_anchor(gh: GitHub, head: str, now: dict[str, bytes], key_now: str) -> tuple[str, datetime, list[str]]:
+    """A, its committer date, and the merged newest-first history the walk used."""
     lists = {p: _commit_list(gh, p, head) for p in (TABLE_PATH, APP_PATH)}
     merged = merge_history(lists)
     if not merged:
         raise Red(f"argocd lists no commit touching {TABLE_PATH} or {APP_PATH} at {head}")
+    check_no_hidden_merge(gh, head, merged[-1])
     pos = {s: i for i, s in enumerate(merged)}
     dates = {it["sha"]: it["date"] for items in lists.values() for it in items}
     cache: dict[tuple[str, str], bytes] = {}
@@ -324,7 +344,7 @@ def find_anchor(gh: GitHub, head: str, now: dict[str, bytes], key_now: str) -> t
         if key != key_now:
             break
         anchor = commit
-    return anchor, dates[anchor]
+    return anchor, dates[anchor], merged
 
 
 # ── artifacts ───────────────────────────────────────────────────────────────
@@ -392,7 +412,8 @@ def read_verdict(blob: bytes, where: str) -> dict:
     return v
 
 
-def find_verdict(gh: GitHub, key: str, anchor: str) -> tuple[dict, str] | None:
+def find_verdict(gh: GitHub, key: str, anchor: str, newer: tuple[str, ...] = ()) -> tuple[dict, str] | None:
+    """`newer`: the commits the walk passed before reaching `anchor` (same K, newer)."""
     candidates = _artifacts(gh, VERIFY, VERDICT_ARTIFACT, None, VERIFY_BRANCH)
     for art in candidates[:MAX_VERDICT_CANDIDATES]:
         run_id, repo_id = art["workflow_run"]["id"], art["workflow_run"]["repository_id"]
@@ -401,12 +422,19 @@ def find_verdict(gh: GitHub, key: str, anchor: str) -> tuple[dict, str] | None:
         url = f"https://github.com/{VERIFY}/actions/runs/{run_id}"
         v = read_verdict(gh.download(f"/repos/{VERIFY}/actions/artifacts/{art['id']}/zip"), url)
         if v["K"] is None:
+            # DEFENSIVE: argocd does not write this shape (a refused key exits 1 with
+            # no verdict). Kept so a refusal that does arrive is named, not "malformed".
             # Newer than any verdict for this epoch: the gate's latest word is a refusal.
             raise Red(f"the gate refused the key at S {v['S']}: {v['clause']} ({url})")
         if v["A"] == anchor and v["K"] != key:
             raise Red(
                 f"key computation disagrees: the verdict at {url} names anchor {anchor} "
                 f"with K {v['K']}, estate computes K {key}"
+            )
+        if v["K"] == key and v["A"] != anchor and v["A"] in newer:
+            raise Red(
+                f"anchor computation disagrees: the verdict at {url} names anchor {v['A']} for K {key}, "
+                f"estate walks past it to {anchor}"
             )
         if v["A"] == anchor and v["K"] == key:
             return v, url
@@ -437,7 +465,7 @@ def decide(public: GitHub, verify: GitHub, estate: GitHub, inp: Inputs) -> Decis
     now = {p: contents(public, p, head) for p in (TABLE_PATH, APP_PATH, PIN_PATH)}
     pin = check_consistency(now[APP_PATH], now[TABLE_PATH], now[PIN_PATH])
     key = render_key(now[TABLE_PATH], now[APP_PATH])
-    anchor, anchored_at = find_anchor(public, head, now, key)
+    anchor, anchored_at, merged = find_anchor(public, head, now, key)
     epoch = f"{key}-{anchor}"
     where = f"render `{key}` at `{anchor}` (pin {pin}, argocd main `{head}`)"
     if not verify.token:
@@ -445,7 +473,7 @@ def decide(public: GitHub, verify: GitHub, estate: GitHub, inp: Inputs) -> Decis
             "the argocd-verify read token is empty: the `verdict-reader` environment "
             "or its ARGOCD_VERIFY_READ_TOKEN secret is missing (MIGRATION_NOTES item 8)"
         )
-    found = find_verdict(verify, key, anchor)
+    found = find_verdict(verify, key, anchor, tuple(merged[: merged.index(anchor)]))
     if found is None:
         due = anchored_at + GATE_BUDGET + DEADLINE_MARGIN
         if (inp.now or datetime.now(timezone.utc)) > due:

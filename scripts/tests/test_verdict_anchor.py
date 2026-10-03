@@ -28,17 +28,17 @@ def test_real_history_anchors_at_d41c07f(world):
     assert anchor(world) == SHA_D41
 
 
-def test_the_public_half_costs_eight_calls_and_a_poll_eleven(world):
-    """Measured, not stated: 8 public argocd calls (branch, 3 files, 2 lists, 2
-    walk reads), then 3 with the token (list, run, artifact). The blob hop is
-    not an API call and carries no token."""
+def test_the_public_half_costs_nine_calls_and_a_poll_twelve(world):
+    """Measured, not stated: 9 public argocd calls (branch, 3 files, 2 path lists,
+    1 unfiltered page for hidden merges, 2 walk reads), then 3 with the token
+    (list, run, artifact). The blob hop is not an API call and carries no token."""
     from conftest import run
 
     world.add_verdict(1, {"S": SHA_D41, "P": "0.3.38", "K": "0" * 64, "A": "1" * 40, "result": "green"})
     run(world)
     api = [u for u, _ in world.calls if u.startswith(verdict.API)]
     public = [u for u in api if f"/repos/{verdict.ARGOCD}/" in u]
-    assert (len(public), len(api)) == (8, 11), api
+    assert (len(public), len(api)) == (9, 12), api
 
 
 def _three(shas, dates, table_list, app_list, versions, head):
@@ -139,7 +139,7 @@ def test_an_unbounded_walk_refuses_rather_than_guesses():
 def test_the_anchor_comes_back_with_its_committer_date(world):
     head = {p: world.routes[f"{verdict.API}/repos/{verdict.ARGOCD}/contents/{p}?ref={SHA_D41}"].body for p in (T, APP)}
     key = verdict.render_key(head[T], head[APP])
-    sha, date = verdict.find_anchor(verdict.GitHub(world, OWN_TOKEN, "argocd"), SHA_D41, head, key)
+    sha, date, _ = verdict.find_anchor(verdict.GitHub(world, OWN_TOKEN, "argocd"), SHA_D41, head, key)
     assert (sha, date.isoformat()) == (SHA_D41, "2026-10-02T22:31:27+00:00")
 
 
@@ -151,3 +151,32 @@ def test_a_full_page_of_history_is_red_not_the_oldest_listed():
     api = verdict.GitHub(gh, OWN_TOKEN, "argocd")
     with pytest.raises(verdict.Red, match="a full page"):
         verdict.find_anchor(api, shas[0], {T: NEW[T], APP: NEW[APP]}, "k")
+
+
+def _with_mainline(mainline):
+    hist = [commit(C["b"], DATES["b"]), commit(C["a"], DATES["a"])]
+    gh = FakeGitHub()
+    versions = {(T, C["a"]): NEW[T], (APP, C["a"]): NEW[APP]}
+    gh.argocd(C["b"], {T: hist[1:], APP: hist}, versions, mainline=mainline)
+    return verdict.GitHub(gh, OWN_TOKEN, "argocd")
+
+
+def test_a_merge_commit_the_path_filter_hid_is_red():
+    # Hello-World 7fd1a60's shape: the merge is TREESAME to a parent, so neither
+    # path list shows it; only the unfiltered page does.
+    hidden = commit("f" * 40, "2026-10-01T12:00:00Z", parents=2)
+    api = _with_mainline([commit(C["b"], DATES["b"]), hidden, commit(C["a"], DATES["a"])])
+    with pytest.raises(verdict.Red, match=f"merge commit {'f' * 40}"):
+        verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
+
+
+def test_a_merge_older_than_the_walk_is_not_its_business():
+    old_merge = commit("f" * 40, "2026-09-01T12:00:00Z", parents=2)
+    api = _with_mainline([commit(C["b"], DATES["b"]), commit(C["a"], DATES["a"]), old_merge])
+    assert verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))[0] == C["a"]
+
+
+def test_an_oldest_walked_commit_beyond_the_unfiltered_page_is_red():
+    api = _with_mainline([commit(C["b"], DATES["b"])])
+    with pytest.raises(verdict.Red, match="cannot rule out a merge commit"):
+        verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
