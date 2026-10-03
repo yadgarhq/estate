@@ -30,9 +30,18 @@ pub fn project_id() -> String {
 /// Reads the ambient environment and hands it to [`run_key_from`], which holds
 /// the whole of the decision. The split is what makes the decision testable:
 /// see the note above the tests.
+///
+/// **ADR-0569-EXCEPTION(ABS) — THIS IS NOT CONFIGURATION.** `GITHUB_RUN_ID`
+/// and `GITHUB_RUN_ATTEMPT` are GitHub's own ambient variables, not a knob
+/// this crate exposes to an operator; there is no seed value for them to have
+/// ONE source in. Absence off a runner is the ordinary case this function
+/// exists to detect, not a misconfiguration to refuse over, and
+/// `run_key_from`'s `local-<pid>` fallback is a namespace key nobody chooses
+/// or configures — exactly the "value that is not configuration at all"
+/// ADR-0569's own consequences call out.
 pub fn run_key() -> String {
-    let id = std::env::var("GITHUB_RUN_ID").ok();
-    let attempt = std::env::var("GITHUB_RUN_ATTEMPT").ok();
+    let id = std::env::var("GITHUB_RUN_ID").ok(); // ADR-0569-EXCEPTION(ABS): see doc comment above.
+    let attempt = std::env::var("GITHUB_RUN_ATTEMPT").ok(); // ADR-0569-EXCEPTION(ABS): see doc comment above.
     run_key_from(id.as_deref(), attempt.as_deref())
 }
 
