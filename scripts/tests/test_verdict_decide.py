@@ -205,9 +205,12 @@ def test_main_writes_outputs_and_fails_closed(world, tmp_path):
 
 
 # ── argocd's own verdicts, byte for byte ────────────────────────────────────
-# fixtures/verdict/*.json are what argocd#64's `run_judge` (head e3f6643) wrote
-# for its test estate: green, red after the deadline (Clause B), and a refused
-# render key (K and A null). argocd asserts its writer still produces these bytes.
+# fixtures/verdict/{green,red}.json are argocd#64's own fixture bytes (head
+# 87e1961, `scripts/tests/fixtures/settled_gate/verdict/`): what its
+# `run_judge` writes for its test estate, green and red after the deadline
+# (Clause B). argocd asserts its writer still produces these bytes. argocd
+# writes NO verdict for a refused render key (it exits 1), so there is no
+# refused fixture here; the refusal case below is estate's own defence.
 VERDICTS = Path(__file__).resolve().parent / "fixtures" / "verdict"
 
 
@@ -217,13 +220,18 @@ def test_argocds_written_verdicts_are_accepted(name, result):
     assert (v["result"], v["P"], len(v["K"]), len(v["A"])) == (result, "0.3.38", 64, 40)
 
 
-def test_argocds_refused_key_verdict_is_read_as_a_refusal_not_malformed():
-    v = verdict.read_verdict(verdict_zip((VERDICTS / "refused.json").read_text()), "refused")
+REFUSED = {"S": "1" * 40, "P": "0.3.38", "K": None, "A": None, "result": "red",
+           "clause": "derivation: render key refused: a bool key"}
+
+
+def test_a_refused_key_verdict_would_be_read_as_a_refusal_not_malformed():
+    # Not argocd's bytes: argocd does not write this shape. Defensive only.
+    v = verdict.read_verdict(verdict_zip(REFUSED), "refused")
     assert (v["K"], v["A"], v["result"]) == (None, None, "red")
 
 
 def test_a_refused_key_verdict_is_red_naming_the_gates_refusal(world):
-    world.add_verdict(7, (VERDICTS / "refused.json").read_text())
+    world.add_verdict(7, REFUSED)
     with pytest.raises(verdict.Red, match="the gate refused the key at S 1{40}: derivation: render key refused"):
         run(world)
 
