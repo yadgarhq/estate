@@ -59,10 +59,13 @@ run-name: >-
 # (MIGRATION_NOTES item 8).
 #
 # GITHUB DISABLES A PUBLIC REPOSITORY'S SCHEDULES AFTER 60 DAYS without
-# repository activity, and this repository is public. Nothing here can notice
-# its own schedule stopping. argocd-verify's `settled.yaml` (private, so not
-# subject to the rule) fails when this workflow's newest run is older than 45
-# days; re-enabling the schedule is manual and the only recovery
+# repository activity, and this repository is public. Activity means commits,
+# not runs: this poll's own runs do not keep it alive, and the age of the newest
+# `smoke.yaml` run stays near zero right up to the day GitHub disables it.
+# Nothing here can notice its own schedule stopping. The guard belongs in
+# argocd-verify's `settled.yaml` (private, so not subject to the rule; ledger
+# 675 stage 3), and it must fail on the age of estate `main`'s newest COMMIT
+# past 45 days. Re-enabling the schedule is manual and the only recovery
 # (MIGRATION_NOTES item 8).
 #
 # The second control is

@@ -317,11 +317,14 @@ The first must end red at the `verdict` job naming **404**, the second naming
 merge must still run `await-roll`.
 
 **The 60-day schedule rule.** GitHub disables a public repository's scheduled
-workflows after 60 days without repository activity. Once stage 7 removes the
-release dispatches, estate can go quiet long enough. argocd-verify's
-`settled.yaml` fails when estate's newest `smoke.yaml` run is older than 45 days
-(GitHub emails on a failed scheduled run); the only recovery is to re-enable the
-workflow by hand:
+workflows after 60 days without repository activity, and activity means commits,
+not workflow runs: the poll does not keep itself alive. Dependabot's bumps are
+the only regular commits here, so a quiet stretch is plausible. The guard
+belongs in argocd-verify's `settled.yaml` (stage 3), and it must fail on the age
+of estate `main`'s newest commit past 45 days — not on the age of the newest
+`smoke.yaml` run, which stays near zero until the day GitHub disables the
+schedule (GitHub emails on a failed scheduled run). The only recovery is to
+re-enable the workflow by hand:
 
 ```bash
 gh workflow enable smoke.yaml --repo yadgarhq/estate
