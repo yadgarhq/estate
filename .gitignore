@@ -1,2 +1,4 @@
 target
 .local-review/
+__pycache__/
+.pytest_cache/

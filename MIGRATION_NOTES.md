@@ -16,7 +16,8 @@ Ordered by dependency. Items 1 and 2 are cluster changes and are declared in
 `MIGRATION_NOTES.md`. Item 3 lives in the `nix` repository. Item 4 is a GitHub
 setting, item 5 is the credential ceremony and needs 1 to 4, and item 6 is
 repository settings and is independent of all of them. Item 7 is not stage 1 and
-is listed so it is not forgotten.
+is listed so it is not forgotten. Item 8 is ledger 675 stage 5, and the pull
+request that adds the `verdict` job must not merge before it is done.
 
 ---
 
@@ -91,8 +92,10 @@ It is a per-repository value rather than an inherited one, so it is not
 self-maintaining: the organisation default still reads
 `first_time_contributors`, and what keeps a new repository correct is `apply.sh`
 in `yadgarhq/docs`, which sets it at creation. This is defence in depth anyway:
-`smoke.yaml` triggers on `repository_dispatch` and `workflow_dispatch` only, and
-neither is reachable from a fork.
+`smoke.yaml` triggers on `repository_dispatch`, `workflow_dispatch` and
+`schedule` only (ledger 675 stage 5 added the third), and none is reachable from
+a fork: a fork's schedules run in the fork, which reaches neither the scale set
+nor this repository's environments.
 
 ## 3. The CNI change — WITHDRAWN, and there is nothing here for the operator to do
 
@@ -257,3 +260,73 @@ to restore these after a settings change.
   `.github/actionlint.yaml` and actionlint will accept it on these two
   workflows — nothing mechanical stops the mistake, which is why it is written
   in both places.
+
+## 8. The `verdict-reader` environment and its read-only token — **NEEDS-MAX, before the stage-5 merge**
+
+Ledger 675 stage 5 (`plans/settled-state-smoke-gate.md` in `yadgarhq/docs`,
+ADR-0840, ADR-0844). `smoke.yaml`'s `verdict` job reads argocd-verify's
+`settled-verdict` artifacts with a token held in a dedicated environment.
+
+**Order matters: create the environment BEFORE the pull request merges.** GitHub
+auto-creates an environment that a merged workflow names, with no deployment
+branch policy, and the token would then land in an unprotected environment. Until
+the token exists the `verdict` job fails closed every 15 minutes ("the
+argocd-verify read token is empty"), and the rows do not run.
+
+1. Repository settings → Environments → **`verdict-reader`**. Deployment
+   branches and tags: **Selected branches and tags**, one branch rule, `main`,
+   no tag rule. Not "protected branches only": estate's protection is a ruleset,
+   and GitHub's reading of "protected" is not something to rely on. No required
+   reviewers (the poll runs unattended).
+2. A **fine-grained token** scoped to the single repository
+   `yadgarhq/argocd-verify`: **Actions: read** and **Metadata: read**, nothing
+   else. Record its expiry date here when it is minted, so its first expiry is
+   expected rather than discovered. ADR-0844 states its real reach: Actions: read
+   cannot be narrowed to one artifact, so it also reads `verify.yaml`'s snapshots
+   and run logs (kind-yadgar object names, uids, Secret NAMES — never Secret
+   data).
+3. Store it as the environment secret **`ARGOCD_VERIFY_READ_TOKEN`** in
+   `verdict-reader`, entered on stdin, never in argv:
+
+   ```bash
+   gh secret set ARGOCD_VERIFY_READ_TOKEN --repo yadgarhq/estate --env verdict-reader
+   ```
+
+4. Read the policy back:
+
+   ```bash
+   gh api repos/yadgarhq/estate/environments/verdict-reader \
+     --jq '.deployment_branch_policy'
+   gh api repos/yadgarhq/estate/environments/verdict-reader/deployment-branch-policies \
+     --jq '[.branch_policies[] | {name, type}]'
+   ```
+
+   Want `{"protected_branches":false,"custom_branch_policies":true}` and exactly
+   `[{"name":"main","type":"branch"}]`.
+
+**After the merge, the two live red checks** (ADR-0793; the decision logic is
+also tested in `scripts/tests/test_verdict_decide.py`):
+
+```bash
+gh workflow run smoke.yaml --repo yadgarhq/estate --ref main -f token_probe=own-github-token
+gh workflow run smoke.yaml --repo yadgarhq/estate --ref main -f token_probe=bogus
+```
+
+The first must end red at the `verdict` job naming **404**, the second naming
+**401**; neither may say "waiting". The first `repository_dispatch` after the
+merge must still run `await-roll`.
+
+**The 60-day schedule rule.** GitHub disables a public repository's scheduled
+workflows after 60 days without repository activity. Once stage 7 removes the
+release dispatches, estate can go quiet long enough. argocd-verify's
+`settled.yaml` fails when estate's newest `smoke.yaml` run is older than 45 days
+(GitHub emails on a failed scheduled run); the only recovery is to re-enable the
+workflow by hand:
+
+```bash
+gh workflow enable smoke.yaml --repo yadgarhq/estate
+```
+
+**Rollback.** Revert the pull request; the `repository_dispatch` path never
+changed. Delete the token in GitHub settings and the environment with
+`gh api -X DELETE repos/yadgarhq/estate/environments/verdict-reader`.

@@ -1,0 +1,25 @@
+# YAML 1.1 TRAP VECTOR (ledger 675, ruling 4). PyYAML 6.0.3 reads every value
+# below the way YAML 1.1 does, not the way a reader expects. estate's verdict
+# job and argocd's settled_gate.py must both encode it to the bytes frozen in
+# scripts/tests/test_verdict_key.py. Do not reformat this file: its bytes are
+# the vector.
+spec:
+  source:
+    repoURL: ghcr.io/yadgarhq/charts
+    chart: yadgar
+    targetRevision: 0.3.38
+    helm:
+      valuesObject:
+        switch: on
+        answer: yes
+        negative: off
+        mode: 0755
+        octal_new: 0o755
+        exponent: 1e3
+        sexagesimal: 1:20
+        ratio: 0.50
+        name: "Ångström ✓"
+        empty: ~
+        nested:
+          z_last: 1
+          a_first: [3, "2", 1.0]
