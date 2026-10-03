@@ -21,6 +21,14 @@ import verdict
 K_13A2DB6 = "2e275ae13256aae5d731c11a1e44a17e9a9bd6e815789c77cd86d20a5b950ee3"
 K_D41C07F = "dc901cd764b3e8fdebba5d7a086544d89741c68d82c8876c8677cff947bfd942"
 TRAP_K = "1b6a71c36fa07523feda3822718b321560a667b299152e61e052a9d7e4baf17a"
+# argocd's own trap vector (`YAML_TRAPS` in argocd `scripts/tests/test_settled_gate.py`,
+# argocd#63/#64 at e3f6643), written out byte for byte under fixtures/yaml-trap-argocd/.
+ARGOCD_TRAP_K = "3a6bcb437e3ce19a7db3f616adfd22fc4e15d60cf152ee71eb98761d9b05a818"
+ARGOCD_TRAP_CANONICAL = (
+    b'{"chart":"yadgar","helm":{"valuesObject":{"big":"1e3","confirm":true,"enabled":true,'
+    b'"mode":493,"name":"G\\u00f6teborg \\u2713","ratio":0.5}},'
+    b'"repoURL":"ghcr.io/yadgarhq/charts","targetRevision":"0.3.38"}'
+)
 TRAP_CANONICAL = (
     b'{"chart":"yadgar","helm":{"valuesObject":{"answer":true,"empty":null,'
     b'"exponent":"1e3","mode":493,"name":"\\u00c5ngstr\\u00f6m \\u2713",'
@@ -46,6 +54,14 @@ def test_the_yaml_trap_vector_encodes_to_the_frozen_bytes():
     table = (trap / "yadgar_render.sha256").read_bytes()
     assert verdict.canonical(verdict.spec_source(app)) == TRAP_CANONICAL
     assert verdict.render_key(table, app) == TRAP_K
+
+
+def test_argocds_trap_vector_encodes_to_argocds_frozen_bytes():
+    trap = FIXTURES.parent / "yaml-trap-argocd"
+    app = (trap / "yadgar.yaml").read_bytes()
+    table = (trap / "yadgar_render.sha256").read_bytes()
+    assert verdict.canonical(verdict.spec_source(app)) == ARGOCD_TRAP_CANONICAL
+    assert verdict.render_key(table, app) == ARGOCD_TRAP_K
 
 
 def test_a_comment_only_edit_does_not_move_k():

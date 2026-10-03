@@ -19,6 +19,7 @@ import json
 import sys
 import urllib.parse
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,9 @@ ESTATE_ID = 2002
 FORK_ID = 3003
 VERIFY_TOKEN = "verify-token-under-test"
 OWN_TOKEN = "own-token-under-test"
+# Ten minutes after d41c07f, the real anchor: inside the gate's deadline, so "no
+# verdict" is still "waiting". Tests of the deadline pass their own `now`.
+NOW = datetime(2026, 10, 2, 22, 41, 27, tzinfo=timezone.utc)
 
 
 def fixture_files(sha: str) -> dict[str, bytes]:
@@ -94,7 +98,9 @@ class FakeGitHub:
         self.argocd(SHA_D41, {verdict.TABLE_PATH: history, verdict.APP_PATH: history}, files)
 
     def add_verdict(self, art_id: int, payload, *, name=verdict.VERDICT_ARTIFACT, branch="main",
-                    head_repo=VERIFY_ID, path=verdict.VERDICT_WORKFLOW, expired=False):
+                    head_repo=VERIFY_ID, path=verdict.VERDICT_WORKFLOW, expired=False,
+                    run_branch=None, run_head_repo=None, event="schedule"):
+        """`run_branch`/`run_head_repo` let the run record disagree with the listing."""
         run_id = 50000 + art_id
         self.verify_artifacts.append({
             "id": art_id, "name": name, "expired": expired,
@@ -102,13 +108,14 @@ class FakeGitHub:
                              "head_repository_id": head_repo, "head_branch": branch},
         })
         self.route(f"/repos/{verdict.VERIFY}/actions/runs/{run_id}",
-                   {"path": path, "head_branch": branch, "head_repository": {"id": head_repo}})
+                   {"path": path, "event": event, "head_branch": run_branch or branch,
+                    "head_repository": {"id": run_head_repo or head_repo}})
         blob = f"https://blob.example/{art_id}.zip"
         self.route(f"/repos/{verdict.VERIFY}/actions/artifacts/{art_id}/zip", b"", 302, blob)
         self.route(blob, verdict_zip(payload))
 
     def add_cert(self, epoch: str, art_id: int, *, branch="main", head_repo=ESTATE_ID,
-                 path=verdict.SMOKE_WORKFLOW):
+                 path=verdict.SMOKE_WORKFLOW, run_branch=None, run_head_repo=None):
         run_id = 70000 + art_id
         self.estate_artifacts.setdefault(epoch, []).append({
             "id": art_id, "name": verdict.CERT_PREFIX + epoch, "expired": False,
@@ -116,7 +123,8 @@ class FakeGitHub:
                              "head_repository_id": head_repo, "head_branch": branch},
         })
         self.route(f"/repos/yadgarhq/estate/actions/runs/{run_id}",
-                   {"path": path, "head_branch": branch, "head_repository": {"id": head_repo}})
+                   {"path": path, "head_branch": run_branch or branch,
+                    "head_repository": {"id": run_head_repo or head_repo}})
 
     def __call__(self, url: str, token):
         self.calls.append((url, token))
@@ -136,12 +144,12 @@ class FakeGitHub:
         return self.routes[url]
 
 
-def run(gh: FakeGitHub, *, verify_token=VERIFY_TOKEN, recertify=False) -> verdict.Decision:
+def run(gh: FakeGitHub, *, verify_token=VERIFY_TOKEN, recertify=False, now=NOW) -> verdict.Decision:
     return verdict.decide(
         verdict.GitHub(gh, OWN_TOKEN, "argocd (public)"),
         verdict.GitHub(gh, verify_token, "argocd-verify"),
         verdict.GitHub(gh, OWN_TOKEN, "estate's own artifact listing"),
-        verdict.Inputs("yadgarhq/estate", ESTATE_ID, "main", recertify),
+        verdict.Inputs("yadgarhq/estate", ESTATE_ID, "main", recertify, now),
     )
 
 

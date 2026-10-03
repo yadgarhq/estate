@@ -22,7 +22,7 @@ SMOKE = yaml.safe_load((WORKFLOWS / "smoke.yaml").read_text())
 # PyYAML reads the key `on` as the boolean True (YAML 1.1); the trap is real.
 TRIGGERS = SMOKE.get("on", SMOKE.get(True))
 JOBS = SMOKE["jobs"]
-TOKEN = re.compile(r"\s*(\(|\)|&&|\|\||==|!=|'[^']*'|always\(\)|[A-Za-z_][\w.\-]*)")
+TOKEN = re.compile(r"\s*(\(|\)|&&|\|\||==|!=|!|'[^']*'|always\(\)|cancelled\(\)|[A-Za-z_][\w.\-]*)")
 
 
 def evaluate(expr: str, ctx: dict) -> bool:
@@ -50,8 +50,12 @@ def evaluate(expr: str, ctx: dict) -> bool:
             assert tokens[i] == ")"
             i += 1
             return v
+        if tok == "!":
+            return not atom()
         if tok == "always()":
             return True
+        if tok == "cancelled()":
+            return ctx.get("cancelled()", False)
         if tok.startswith("'"):
             return tok[1:-1]
         return ctx.get(tok, "")
@@ -124,10 +128,14 @@ def test_await_roll_runs_on_repository_dispatch_only():
 
 def test_the_certificate_is_uploaded_on_every_verdict_driven_run_pass_or_fail():
     upload = next(s for s in JOBS["smoke"]["steps"] if s.get("uses", "").startswith("actions/upload-artifact@"))
+    write = next(s for s in JOBS["smoke"]["steps"] if s.get("name") == "write the certificate")
     assert upload["with"]["name"] == "smoke-certified-${{ needs.verdict.outputs.epoch }}"
-    assert upload["if"].startswith("always()")
-    assert evaluate(upload["if"], {"github.event_name": "schedule"})
-    assert not evaluate(upload["if"], {"github.event_name": "repository_dispatch"})
+    for step in (write, upload):
+        assert evaluate(step["if"], {"github.event_name": "schedule"})
+        assert evaluate(step["if"], {"github.event_name": "workflow_dispatch"})
+        assert not evaluate(step["if"], {"github.event_name": "repository_dispatch"})
+        # a cancelled run certified nothing and must not block the next poll
+        assert not evaluate(step["if"], {"github.event_name": "schedule", "cancelled()": True})
 
 
 def test_the_verdict_job_is_confined():

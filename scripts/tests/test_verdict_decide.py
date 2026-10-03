@@ -11,7 +11,10 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import ESTATE_ID, FORK_ID, OWN_TOKEN, SHA_D41, VERIFY_TOKEN, run, verdict_zip
+from datetime import datetime, timezone
+from pathlib import Path
+
+from conftest import ESTATE_ID, FORK_ID, OWN_TOKEN, SHA_D41, VERIFY_ID, VERIFY_TOKEN, run, verdict_zip
 from test_verdict_key import K_D41C07F
 
 import verdict
@@ -199,3 +202,86 @@ def test_main_writes_outputs_and_fails_closed(world, tmp_path):
     assert verdict.main(env, world) == 0
     assert f"run=true\nepoch={EPOCH}\n" in out.read_text()
     assert VERIFY_TOKEN not in summary.read_text() + out.read_text()
+
+
+# ── argocd's own verdicts, byte for byte ────────────────────────────────────
+# fixtures/verdict/*.json are what argocd#64's `run_judge` (head e3f6643) wrote
+# for its test estate: green, red after the deadline (Clause B), and a refused
+# render key (K and A null). argocd asserts its writer still produces these bytes.
+VERDICTS = Path(__file__).resolve().parent / "fixtures" / "verdict"
+
+
+@pytest.mark.parametrize("name,result", [("green", "green"), ("red", "red")])
+def test_argocds_written_verdicts_are_accepted(name, result):
+    v = verdict.read_verdict(verdict_zip((VERDICTS / f"{name}.json").read_text()), name)
+    assert (v["result"], v["P"], len(v["K"]), len(v["A"])) == (result, "0.3.38", 64, 40)
+
+
+def test_argocds_refused_key_verdict_is_read_as_a_refusal_not_malformed():
+    v = verdict.read_verdict(verdict_zip((VERDICTS / "refused.json").read_text()), "refused")
+    assert (v["K"], v["A"], v["result"]) == (None, None, "red")
+
+
+def test_a_refused_key_verdict_is_red_naming_the_gates_refusal(world):
+    world.add_verdict(7, (VERDICTS / "refused.json").read_text())
+    with pytest.raises(verdict.Red, match="the gate refused the key at S 1{40}: derivation: render key refused"):
+        run(world)
+
+
+def test_null_k_on_a_green_verdict_is_malformed(world):
+    world.add_verdict(7, green(K=None, A=None))
+    with pytest.raises(verdict.Red, match="malformed"):
+        run(world)
+
+
+# ── silence past the gate's deadline ────────────────────────────────────────
+
+
+def test_no_verdict_past_the_gates_deadline_is_red_not_waiting(world):
+    # d41c07f committed 22:31:27Z; due by +3900 s +30 min = 00:06:27Z the next day.
+    with pytest.raises(verdict.Red, match=r"no verdict for epoch .* past the gate's deadline \(2026-10-03T00:06:27\+00:00\); the gate and estate may disagree on A"):
+        run(world, now=datetime(2026, 10, 3, 0, 7, tzinfo=timezone.utc))
+    assert run(world, now=datetime(2026, 10, 3, 0, 6, tzinfo=timezone.utc)).summary.startswith("waiting")
+
+
+def test_a_red_verdict_past_the_deadline_is_still_a_quiet_red(world):
+    world.add_verdict(7, green(result="red", clause="Clause A"))
+    assert not run(world, now=datetime(2026, 10, 4, tzinfo=timezone.utc)).run
+
+
+# ── the two filter layers, each on its own ──────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "where",
+    [{"run_branch": "feature"}, {"run_head_repo": FORK_ID}, {"event": "push"}, {"event": "pull_request"},
+     {"branch": "feature", "run_branch": "main"}, {"head_repo": FORK_ID, "run_head_repo": VERIFY_ID}],
+    ids=["run-branch", "run-fork", "push-event", "pr-event", "listing-branch", "listing-fork"],
+)
+def test_a_verdict_whose_run_record_disagrees_with_the_listing_is_ignored(world, where):
+    world.add_verdict(7, green(), **where)
+    assert run(world).summary.startswith("waiting")
+
+
+@pytest.mark.parametrize(
+    "where",
+    [{"run_branch": "feature"}, {"run_head_repo": FORK_ID},
+     {"branch": "feature", "run_branch": "main"}, {"head_repo": FORK_ID, "run_head_repo": ESTATE_ID}],
+    ids=["run-branch", "run-fork", "listing-branch", "listing-fork"],
+)
+def test_a_certificate_whose_run_record_disagrees_with_the_listing_is_ignored(world, where):
+    world.add_verdict(7, green())
+    world.add_cert(EPOCH, 1, **where)
+    assert run(world).run
+
+
+def test_a_newer_verdict_for_another_epoch_does_not_hide_the_match(world):
+    world.add_verdict(7, green())
+    world.add_verdict(8, green(K="a" * 64, A="b" * 40))  # newer, a different epoch
+    d = run(world)
+    assert d.run and d.verdict_url.endswith("/50007")
+
+
+def test_the_listing_repository_must_be_the_runs_head_repository(world):
+    world.add_verdict(7, green(), head_repo=VERIFY_ID + 1, run_head_repo=VERIFY_ID + 1)
+    assert run(world).summary.startswith("waiting")

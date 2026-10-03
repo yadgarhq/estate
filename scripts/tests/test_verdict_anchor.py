@@ -21,7 +21,7 @@ def anchor(gh: FakeGitHub) -> str:
     """The walk at `gh.head`, with the head's files read from the declared world."""
     head = {p: gh.routes[f"{verdict.API}/repos/{verdict.ARGOCD}/contents/{p}?ref={gh.head}"].body for p in (T, APP)}
     key = verdict.render_key(head[T], head[APP])
-    return verdict.find_anchor(verdict.GitHub(gh, OWN_TOKEN, "argocd"), gh.head, head, key)
+    return verdict.find_anchor(verdict.GitHub(gh, OWN_TOKEN, "argocd"), gh.head, head, key)[0]
 
 
 def test_real_history_anchors_at_d41c07f(world):
@@ -65,7 +65,7 @@ def test_a_revert_to_an_earlier_render_is_a_new_epoch():
     gh = _three(order, D, order, order, versions, C["c"])
     key = verdict.render_key(OLD[T], OLD[APP])
     api = verdict.GitHub(gh, OWN_TOKEN, "argocd")
-    assert verdict.find_anchor(api, C["c"], {T: OLD[T], APP: OLD[APP]}, key) == C["c"]
+    assert verdict.find_anchor(api, C["c"], {T: OLD[T], APP: OLD[APP]}, key)[0] == C["c"]
 
 
 def test_a_comment_only_edit_does_not_move_the_anchor():
@@ -75,7 +75,7 @@ def test_a_comment_only_edit_does_not_move_the_anchor():
     gh = _three(None, D, [C["a"]], [C["b"], C["a"]], versions, C["b"])
     key = verdict.render_key(NEW[T], commented)
     api = verdict.GitHub(gh, OWN_TOKEN, "argocd")
-    assert verdict.find_anchor(api, C["b"], {T: NEW[T], APP: commented}, key) == C["a"]
+    assert verdict.find_anchor(api, C["b"], {T: NEW[T], APP: commented}, key)[0] == C["a"]
 
 
 def test_when_history_runs_out_the_oldest_listed_commit_is_the_anchor():
@@ -83,7 +83,7 @@ def test_when_history_runs_out_the_oldest_listed_commit_is_the_anchor():
     gh = _three(None, D, [C["a"]], [C["b"], C["a"]], versions, C["b"])
     key = verdict.render_key(NEW[T], NEW[APP])
     api = verdict.GitHub(gh, OWN_TOKEN, "argocd")
-    assert verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, key) == C["a"]
+    assert verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, key)[0] == C["a"]
 
 
 def test_a_commit_before_one_file_existed_ends_the_walk():
@@ -92,7 +92,7 @@ def test_a_commit_before_one_file_existed_ends_the_walk():
     gh = _three(None, D, [C["b"]], [C["b"], C["a"]], versions, C["b"])
     key = verdict.render_key(NEW[T], NEW[APP])
     api = verdict.GitHub(gh, OWN_TOKEN, "argocd")
-    assert verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, key) == C["b"]
+    assert verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, key)[0] == C["b"]
 
 
 def test_a_merge_commit_is_red():
@@ -134,3 +134,20 @@ def test_an_unbounded_walk_refuses_rather_than_guesses():
     api = verdict.GitHub(gh, OWN_TOKEN, "argocd")
     with pytest.raises(verdict.Red, match="more than"):
         verdict.find_anchor(api, shas[0], {T: NEW[T], APP: head_app}, key)
+
+
+def test_the_anchor_comes_back_with_its_committer_date(world):
+    head = {p: world.routes[f"{verdict.API}/repos/{verdict.ARGOCD}/contents/{p}?ref={SHA_D41}"].body for p in (T, APP)}
+    key = verdict.render_key(head[T], head[APP])
+    sha, date = verdict.find_anchor(verdict.GitHub(world, OWN_TOKEN, "argocd"), SHA_D41, head, key)
+    assert (sha, date.isoformat()) == (SHA_D41, "2026-10-02T22:31:27+00:00")
+
+
+def test_a_full_page_of_history_is_red_not_the_oldest_listed():
+    shas = [f"{i:040x}" for i in range(100)]
+    hist = [commit(s, f"2026-01-01T00:00:{i % 60:02d}Z") for i, s in enumerate(shas)]
+    gh = FakeGitHub()
+    gh.argocd(shas[0], {T: hist, APP: hist[:1]}, {})
+    api = verdict.GitHub(gh, OWN_TOKEN, "argocd")
+    with pytest.raises(verdict.Red, match="a full page"):
+        verdict.find_anchor(api, shas[0], {T: NEW[T], APP: NEW[APP]}, "k")

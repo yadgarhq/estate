@@ -41,7 +41,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 import yaml
@@ -58,6 +58,8 @@ FORBIDDEN_SOURCE_KEYS = ("path", "kustomize", "plugin")
 VERDICT_ARTIFACT = "settled-verdict"
 # argocd-verify's default branch. ADR-0844: the gate runs main's copy only.
 VERIFY_BRANCH = "main"
+# `settled.yaml` judges on its cron or on a hand re-judge; nothing else writes a verdict.
+VERDICT_EVENTS = ("schedule", "workflow_dispatch")
 VERDICT_WORKFLOW = ".github/workflows/settled.yaml"
 VERDICT_FILE = "verdict.json"
 SMOKE_WORKFLOW = ".github/workflows/smoke.yaml"
@@ -69,6 +71,14 @@ MAX_FILE_READS = 8
 # Verdicts are uploaded once per epoch (plus re-judges), so the current
 # epoch's verdict is among the newest few or it does not exist yet.
 MAX_VERDICT_CANDIDATES = 5
+# The gate's budget: a verdict is due by A's committer date + 3900 s
+# (`settled_gate.BUDGET_SECONDS`). Past that plus a margin of three gate polls,
+# "no verdict" stops meaning "waiting" and means the gate and estate disagree.
+GATE_BUDGET = timedelta(seconds=3900)
+DEADLINE_MARGIN = timedelta(minutes=30)
+# The commits API's page size. A full page means history may continue on the
+# next page, and the walk would then call "the oldest listed" an anchor it is not.
+PAGE = 100
 TOKEN_PROBES = ("real", "own-github-token", "bogus")
 BOGUS_TOKEN = "bogus-token-for-the-401-arm"
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -237,9 +247,12 @@ def contents(gh: GitHub, path: str, ref: str) -> bytes:
 
 
 def _commit_list(gh: GitHub, path: str, head: str) -> list[dict]:
-    q = urllib.parse.urlencode({"sha": head, "path": path, "per_page": 100})
+    q = urllib.parse.urlencode({"sha": head, "path": path, "per_page": PAGE})
+    items = gh.json(f"/repos/{ARGOCD}/commits?{q}")
+    if len(items) >= PAGE:
+        raise Red(f"argocd lists {len(items)} commits touching {path}, a full page; refusing to guess A from a truncated history")
     out = []
-    for item in gh.json(f"/repos/{ARGOCD}/commits?{q}"):
+    for item in items:
         sha = item["sha"]
         if len(item.get("parents", [])) > 1:
             raise Red(f"commit {sha} touching {path} has two parents; argocd main is squash-only")
@@ -272,13 +285,14 @@ def merge_history(lists: dict[str, list[dict]]) -> list[str]:
     return merged
 
 
-def find_anchor(gh: GitHub, head: str, now: dict[str, bytes], key_now: str) -> str:
-    """A: walking newest-first, the last commit whose K still equals `key_now`."""
+def find_anchor(gh: GitHub, head: str, now: dict[str, bytes], key_now: str) -> tuple[str, datetime]:
+    """A and its committer date: walking newest-first, the last commit whose K still equals `key_now`."""
     lists = {p: _commit_list(gh, p, head) for p in (TABLE_PATH, APP_PATH)}
     merged = merge_history(lists)
     if not merged:
         raise Red(f"argocd lists no commit touching {TABLE_PATH} or {APP_PATH} at {head}")
     pos = {s: i for i, s in enumerate(merged)}
+    dates = {it["sha"]: it["date"] for items in lists.values() for it in items}
     cache: dict[tuple[str, str], bytes] = {}
     for p, items in lists.items():
         if items:  # the newest version of each file is the file at `head`
@@ -310,7 +324,7 @@ def find_anchor(gh: GitHub, head: str, now: dict[str, bytes], key_now: str) -> s
         if key != key_now:
             break
         anchor = commit
-    return anchor
+    return anchor, dates[anchor]
 
 
 # ── artifacts ───────────────────────────────────────────────────────────────
@@ -332,17 +346,21 @@ def _artifacts(gh: GitHub, repo: str, name: str, repo_id: int | None, branch: st
             and not art.get("expired")
             and run.get("head_branch") == branch
             and run.get("repository_id") is not None
-            and run.get("repository_id") == (repo_id if repo_id is not None else run.get("repository_id"))
             and run.get("head_repository_id") == run.get("repository_id")
+            and (repo_id is None or run.get("repository_id") == repo_id)
         ):
             keep.append(art)
     return sorted(keep, key=lambda a: a.get("id", 0), reverse=True)
 
 
-def _run_is(gh: GitHub, repo: str, run_id: int, workflow: str, repo_id: int, branch: str) -> bool:
+def _run_is(gh: GitHub, repo: str, run_id: int, workflow: str, repo_id: int, branch: str,
+            events: tuple[str, ...] | None = None) -> bool:
+    """The run record, re-checked: the listing's fields are repeated on purpose, so a
+    disagreement between the two layers drops the artifact rather than trusting either."""
     run = gh.json(f"/repos/{repo}/actions/runs/{run_id}")
     return (
-        run.get("path") == workflow
+        (events is None or run.get("event") in events)
+        and run.get("path") == workflow
         and run.get("head_branch") == branch
         and (run.get("head_repository") or {}).get("id") == repo_id
     )
@@ -354,6 +372,12 @@ def read_verdict(blob: bytes, where: str) -> dict:
             v = json.loads(zf.read(VERDICT_FILE))
     except (zipfile.BadZipFile, KeyError, ValueError):
         raise Red(f"the verdict at {where} has no readable {VERDICT_FILE}") from None
+    if (
+        isinstance(v, dict) and "K" in v and "A" in v and v["K"] is None and v["A"] is None
+        and v.get("result") == "red" and isinstance(v.get("clause"), str)
+        and isinstance(v.get("S"), str) and HEX40.match(v["S"])
+    ):
+        return v  # the gate refused the key: a red with no epoch, named by find_verdict
     ok = (
         isinstance(v, dict)
         and isinstance(v.get("K"), str) and HEX64.match(v["K"])
@@ -372,10 +396,13 @@ def find_verdict(gh: GitHub, key: str, anchor: str) -> tuple[dict, str] | None:
     candidates = _artifacts(gh, VERIFY, VERDICT_ARTIFACT, None, VERIFY_BRANCH)
     for art in candidates[:MAX_VERDICT_CANDIDATES]:
         run_id, repo_id = art["workflow_run"]["id"], art["workflow_run"]["repository_id"]
-        if not _run_is(gh, VERIFY, run_id, VERDICT_WORKFLOW, repo_id, VERIFY_BRANCH):
+        if not _run_is(gh, VERIFY, run_id, VERDICT_WORKFLOW, repo_id, VERIFY_BRANCH, VERDICT_EVENTS):
             continue
         url = f"https://github.com/{VERIFY}/actions/runs/{run_id}"
         v = read_verdict(gh.download(f"/repos/{VERIFY}/actions/artifacts/{art['id']}/zip"), url)
+        if v["K"] is None:
+            # Newer than any verdict for this epoch: the gate's latest word is a refusal.
+            raise Red(f"the gate refused the key at S {v['S']}: {v['clause']} ({url})")
         if v["A"] == anchor and v["K"] != key:
             raise Red(
                 f"key computation disagrees: the verdict at {url} names anchor {anchor} "
@@ -402,6 +429,7 @@ class Inputs:
     estate_repo_id: int
     estate_branch: str
     recertify: bool = False
+    now: datetime | None = None
 
 
 def decide(public: GitHub, verify: GitHub, estate: GitHub, inp: Inputs) -> Decision:
@@ -409,7 +437,7 @@ def decide(public: GitHub, verify: GitHub, estate: GitHub, inp: Inputs) -> Decis
     now = {p: contents(public, p, head) for p in (TABLE_PATH, APP_PATH, PIN_PATH)}
     pin = check_consistency(now[APP_PATH], now[TABLE_PATH], now[PIN_PATH])
     key = render_key(now[TABLE_PATH], now[APP_PATH])
-    anchor = find_anchor(public, head, now, key)
+    anchor, anchored_at = find_anchor(public, head, now, key)
     epoch = f"{key}-{anchor}"
     where = f"render `{key}` at `{anchor}` (pin {pin}, argocd main `{head}`)"
     if not verify.token:
@@ -419,6 +447,12 @@ def decide(public: GitHub, verify: GitHub, estate: GitHub, inp: Inputs) -> Decis
         )
     found = find_verdict(verify, key, anchor)
     if found is None:
+        due = anchored_at + GATE_BUDGET + DEADLINE_MARGIN
+        if (inp.now or datetime.now(timezone.utc)) > due:
+            raise Red(
+                f"no verdict for epoch {epoch} past the gate's deadline ({due.isoformat()}); "
+                "the gate and estate may disagree on A"
+            )
         return Decision(False, epoch, f"waiting for a verdict on {where}")
     v, url = found
     if v["result"] == "red":
@@ -436,7 +470,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def http_transport(url: str, token: str | None) -> Response:
+def build_request(url: str, token: str | None) -> urllib.request.Request:
     req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
     if url.startswith(API + "/") and "/contents/" in url:
         req.add_header("Accept", "application/vnd.github.raw")
@@ -444,6 +478,11 @@ def http_transport(url: str, token: str | None) -> Response:
         # Unredirected: the artifact redirect leaves api.github.com, the token must not.
         req.add_unredirected_header("Authorization", f"Bearer {token}")
         req.add_unredirected_header("X-GitHub-Api-Version", "2022-11-28")
+    return req
+
+
+def http_transport(url: str, token: str | None) -> Response:
+    req = build_request(url, token)
     opener = urllib.request.build_opener(_NoRedirect)
     try:
         with opener.open(req, timeout=30) as r:

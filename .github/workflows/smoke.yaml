@@ -59,9 +59,11 @@ run-name: >-
 # (MIGRATION_NOTES item 8).
 #
 # GITHUB DISABLES A PUBLIC REPOSITORY'S SCHEDULES AFTER 60 DAYS without
-# repository activity, and this repository is public. Activity means commits,
-# not runs: this poll's own runs do not keep it alive, and the age of the newest
-# `smoke.yaml` run stays near zero right up to the day GitHub disables it.
+# repository activity, and this repository is public. GitHub does not define
+# 'repository activity'; workflow runs are reported not to count, so the
+# conservative proxy is the age of the newest commit on estate `main`. The age
+# of the newest `smoke.yaml` run would stay near zero right up to the day
+# GitHub disables the schedule.
 # Nothing here can notice its own schedule stopping. The guard belongs in
 # argocd-verify's `settled.yaml` (private, so not subject to the rule; ledger
 # 675 stage 3), and it must fail on the age of estate `main`'s newest COMMIT
@@ -156,6 +158,10 @@ jobs:
     # `always()` because `verdict` is SKIPPED on `repository_dispatch`, and a
     # skipped need skips its dependants unless the condition says otherwise.
     # On the other two triggers the rows run only on a decided `run=true`.
+    # `needs.verdict.result == 'success'` repeats what `run == 'true'` already
+    # implies today (`decide` is the job's last step, and `verdict.py` writes
+    # `run=false` on every refusal). It is kept as the card's condition so that a
+    # step added after `decide` cannot fail and still leave `run=true` standing.
     if: >-
       always() && ((github.event_name == 'repository_dispatch') ||
       (needs.verdict.result == 'success' && needs.verdict.outputs.run == 'true'))
@@ -302,9 +308,10 @@ jobs:
       # than every 15 minutes. Uploaded on a red too: re-running on every poll
       # after a real failure would turn it into a red every 15 minutes. A flaky
       # red therefore blocks automatic re-runs for that epoch until someone
-      # dispatches with `recertify`.
+      # dispatches with `recertify`. `!cancelled()` rather than `always()`: a
+      # cancelled run certified nothing, and must not block the next poll.
       - name: write the certificate
-        if: always() && github.event_name != 'repository_dispatch'
+        if: "!cancelled() && github.event_name != 'repository_dispatch'"
         env:
           EPOCH: ${{ needs.verdict.outputs.epoch }}
           VERDICT_URL: ${{ needs.verdict.outputs.verdict_url }}
@@ -314,7 +321,7 @@ jobs:
           printf 'epoch %s\nverdict %s\nconclusion %s\n' "$EPOCH" "$VERDICT_URL" "$CONCLUSION" > "$RUNNER_TEMP/smoke-certified.txt"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always() && github.event_name != 'repository_dispatch'
+        if: "!cancelled() && github.event_name != 'repository_dispatch'"
         with:
           name: smoke-certified-${{ needs.verdict.outputs.epoch }}
           path: ${{ runner.temp }}/smoke-certified.txt

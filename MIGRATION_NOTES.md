@@ -317,8 +317,9 @@ The first must end red at the `verdict` job naming **404**, the second naming
 merge must still run `await-roll`.
 
 **The 60-day schedule rule.** GitHub disables a public repository's scheduled
-workflows after 60 days without repository activity, and activity means commits,
-not workflow runs: the poll does not keep itself alive. Dependabot's bumps are
+workflows after 60 days without repository activity. GitHub does not define
+'repository activity'; workflow runs are reported not to count, so the
+conservative proxy is the age of the newest commit on estate `main`. Dependabot's bumps are
 the only regular commits here, so a quiet stretch is plausible. The guard
 belongs in argocd-verify's `settled.yaml` (stage 3), and it must fail on the age
 of estate `main`'s newest commit past 45 days — not on the age of the newest
