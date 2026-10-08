@@ -261,7 +261,7 @@ to restore these after a settings change.
   workflows — nothing mechanical stops the mistake, which is why it is written
   in both places.
 
-## 8. The `verdict-reader` environment and its read-only token — **NEEDS-MAX, before the stage-5 merge**
+## 8. The `verdict-reader` environment and its read-only token — **DONE**
 
 Ledger 675 stage 5 (`plans/settled-state-smoke-gate.md` in `yadgarhq/docs`,
 ADR-0840, ADR-0844). `smoke.yaml`'s `verdict` job reads argocd-verify's
@@ -281,7 +281,11 @@ argocd-verify read token is empty"), and the rows do not run.
 2. A **fine-grained token** scoped to the single repository
    `yadgarhq/argocd-verify`: **Actions: read** and **Metadata: read**, nothing
    else. Record its expiry date here when it is minted, so its first expiry is
-   expected rather than discovered. ADR-0844 states its real reach: Actions: read
+   expected rather than discovered. **Minted 2026-10-08. Expires 2027-10-08**
+   (365-day fine-grained token lifetime; org policy refuses a fine-grained PAT
+   lifetime over 366 days). **Rotate by 2027-09-08** — repeat steps 2 through 4
+   below, then rerun the two red checks further down this section. ADR-0844
+   states its real reach: Actions: read
    cannot be narrowed to one artifact, so it also reads `verify.yaml`'s snapshots
    and run logs (kind-yadgar object names, uids, Secret NAMES — never Secret
    data).
@@ -315,6 +319,12 @@ gh workflow run smoke.yaml --repo yadgarhq/estate --ref main -f token_probe=bogu
 The first must end red at the `verdict` job naming **404**, the second naming
 **401**; neither may say "waiting". The first `repository_dispatch` after the
 merge must still run `await-roll`.
+
+**Run 2026-10-08, both red as required.** `token_probe=own-github-token` is
+run `37820004035`; it failed at the `verdict` job: "argocd-verify answered
+404 … This is a refusal, not 'waiting'." `token_probe=bogus` is run
+`37820019653`; it failed at the `verdict` job: "argocd-verify answered 401
+…".
 
 **The 60-day schedule rule.** GitHub disables a public repository's scheduled
 workflows after 60 days without repository activity. GitHub does not define
