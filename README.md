@@ -124,6 +124,7 @@ suite whose coverage claim is honest has to write down the gaps.
 ```bash
 cargo test                                # the pure rows: reference parsing, pair-equality, helpers
 cargo test --test smoke -- --ignored      # the contracts, against the reference cluster
+pytest scripts/tests/ -q                  # smoke.yaml's verdict decider and its trigger conditions
 ```
 
 From a workstation the name has no DNS record and the edge is not on 443, so:

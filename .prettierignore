@@ -1,1 +1,5 @@
 target
+# SHARED TEST VECTORS (ledger 675, ruling 4): these bytes are copied from argocd
+# with `git show <sha>:<path>` and argocd's gate asserts the same keys over the
+# same bytes. A formatter that rewrites them breaks the vector silently.
+scripts/tests/fixtures/
