@@ -261,7 +261,7 @@ to restore these after a settings change.
   workflows — nothing mechanical stops the mistake, which is why it is written
   in both places.
 
-## 8. The `verdict-reader` environment and its read-only token — **NEEDS-MAX, before the stage-5 merge**
+## 8. The `verdict-reader` environment and its read-only token — **DONE (setup only; the gate cannot pass yet)**
 
 Ledger 675 stage 5 (`plans/settled-state-smoke-gate.md` in `yadgarhq/docs`,
 ADR-0840, ADR-0844). `smoke.yaml`'s `verdict` job reads argocd-verify's
@@ -269,9 +269,16 @@ ADR-0840, ADR-0844). `smoke.yaml`'s `verdict` job reads argocd-verify's
 
 **Order matters: create the environment BEFORE the pull request merges.** GitHub
 auto-creates an environment that a merged workflow names, with no deployment
-branch policy, and the token would then land in an unprotected environment. Until
-the token exists the `verdict` job fails closed every 15 minutes ("the
-argocd-verify read token is empty"), and the rows do not run.
+branch policy, and the token would then land in an unprotected environment. The
+token exists since 2026-10-08. Until argocd-verify ships `settled.yaml` (ledger
+675 stage 3) there is no `settled-verdict` artifact, so every `verdict` run
+ends red with "no verdict for epoch … past the gate's deadline" and the rows
+do not run. That red is expected and is not a token fault.
+
+**Observed real-token run.** Run `37821940983` (`token_probe=real`,
+2026-10-08T18:08Z), `verdict` job: "##[error]no verdict for epoch
+1ce5e6b0…-aa1a2998… past the gate's deadline (2026-10-03T10:35:48+00:00); the
+gate and estate may disagree on A".
 
 1. Repository settings → Environments → **`verdict-reader`**. Deployment
    branches and tags: **Selected branches and tags**, one branch rule, `main`,
@@ -281,10 +288,23 @@ argocd-verify read token is empty"), and the rows do not run.
 2. A **fine-grained token** scoped to the single repository
    `yadgarhq/argocd-verify`: **Actions: read** and **Metadata: read**, nothing
    else. Record its expiry date here when it is minted, so its first expiry is
-   expected rather than discovered. ADR-0844 states its real reach: Actions: read
+   expected rather than discovered. **Minted 2026-10-08 (operator-reported).
+   Expires 2027-10-08** (365-day fine-grained token lifetime, operator-reported;
+   org policy refuses a fine-grained PAT lifetime over 366 days). **Rotate by
+   2027-09-08** — repeat steps 2 through 4 below, then run the real-token
+   check:
+
+   ```bash
+   gh workflow run smoke.yaml --repo yadgarhq/estate --ref main -f token_probe=real
+   ```
+
+   Confirm the `verdict` job's error names no 401, 403 or 404 (the two red
+   checks further down this section never send this token). ADR-0844 states
+   its real reach: Actions: read
    cannot be narrowed to one artifact, so it also reads `verify.yaml`'s snapshots
    and run logs (kind-yadgar object names, uids, Secret NAMES — never Secret
    data).
+
 3. Store it as the environment secret **`ARGOCD_VERIFY_READ_TOKEN`** in
    `verdict-reader`, entered on stdin, never in argv:
 
@@ -313,8 +333,22 @@ gh workflow run smoke.yaml --repo yadgarhq/estate --ref main -f token_probe=bogu
 ```
 
 The first must end red at the `verdict` job naming **404**, the second naming
-**401**; neither may say "waiting". The first `repository_dispatch` after the
-merge must still run `await-roll`.
+**401**; neither may say "waiting".
+
+**Run 2026-10-08, both red as required.** `token_probe=own-github-token` is
+run `37820004035`; it failed at the `verdict` job: "argocd-verify answered
+404 … This is a refusal, not 'waiting'." `token_probe=bogus` is run
+`37820019653`; it failed at the `verdict` job: "argocd-verify answered 401
+…".
+
+**Acceptance item 3.** The first `repository_dispatch` after the merge, run
+`37810043332`, skipped `verdict` and ran `await-roll` in `smoke` (red, as
+every module-rolled dispatch is until stage 7).
+
+**Observation, not a cause claim.** No `schedule` run of `smoke.yaml` had
+fired as of 2026-10-08 ~18:10Z (`gh api
+repos/yadgarhq/estate/actions/workflows/smoke.yaml/runs?event=schedule --jq
+'.total_count'` → `0`).
 
 **The 60-day schedule rule.** GitHub disables a public repository's scheduled
 workflows after 60 days without repository activity. GitHub does not define
