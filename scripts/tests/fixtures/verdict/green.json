@@ -1,0 +1,43 @@
+{
+  "A": "1111111111111111111111111111111111111111",
+  "K": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "P": "0.3.38",
+  "S": "1111111111111111111111111111111111111111",
+  "anchor_committed_at": "2026-10-03T12:00:00Z",
+  "artifact": "settled-verdict",
+  "data_sha": "1111111111111111111111111111111111111111",
+  "deadline": "2026-10-03T13:05:00Z",
+  "digests": {
+    "gateway": {
+      "gateway": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "iam": {
+      "iam": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "migrate": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    "iam-db": {
+      "iam-db": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "project": {
+      "project": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "project-db": {
+      "project-db": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "task": {
+      "task": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "valkey": {}
+  },
+  "not_counted": [],
+  "notes": [
+    "Deployment valkey container valkey is tag-pinned (valkey/valkey:9.1.1); its digest is not asserted"
+  ],
+  "problems": [],
+  "read_at": "2026-10-03T12:30:00Z",
+  "result": "green",
+  "tag_pinned": [
+    "valkey/valkey"
+  ],
+  "trial": false
+}

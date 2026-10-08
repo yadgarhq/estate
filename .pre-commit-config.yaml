@@ -122,3 +122,29 @@ repos:
       # the hook's fact-keyed exemption for that pattern is what lets them
       # pass rather than a blind allowance.
       - id: no-test-skips
+
+  # LEDGER 675 STAGE 5. `scripts/verdict.py` decides whether smoke runs the rows
+  # from argocd-verify's settled-state verdict, and its decision table, its
+  # render-key vectors (shared byte for byte with argocd's `settled_gate.py`)
+  # and `smoke.yaml`'s trigger conditions are tested in `scripts/tests/`.
+  # `yadgarhq/actions` publishes no pytest hook, so this is a local copy of
+  # chart's and platform's `pytest-scripts` shape, and it is what makes
+  # `ci-pr.yaml`'s `precommit` job run the suite.
+  #
+  # `language: python` so pre-commit provisions the interpreter, pytest and
+  # PyYAML; both pins match chart, platform and `yadgarhq/actions`' own hook,
+  # and PyYAML 6.0.3 is the version the shared vectors are measured under.
+  #
+  # `always_run` with `pass_filenames: false`, and no `files:` filter: a hook
+  # filtered on `^scripts/` reports `Skipped` on a pull request that changes
+  # only `.github/workflows/smoke.yaml` — which is exactly the pull request whose
+  # trigger conditions `test_smoke_workflow.py` exists to evaluate.
+  - repo: local
+    hooks:
+      - id: pytest-scripts
+        name: pytest scripts/tests
+        language: python
+        additional_dependencies: ["pytest==9.1.1", "pyyaml==6.0.3"]
+        entry: pytest scripts/tests/ -q
+        pass_filenames: false
+        always_run: true
