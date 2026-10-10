@@ -233,6 +233,38 @@ mod tests {
         );
     }
 
+    /// The declared tool surface names every tool the gateway serves.
+    ///
+    /// gateway#96 (v0.9.54) added `edit_task` and `transition_task` to what
+    /// `tools/list` answers; `reference.toml` still declared only the three
+    /// tools that predated it. C-06 (`crates/front/tests/smoke.rs`) dials
+    /// the live cluster and would have caught the drift there, but C-06 is
+    /// `#[ignore]`d outside the estate-front runner, so a stale declaration
+    /// can sit unmeasured between smoke runs. This test pins the same
+    /// closed set with no cluster: a `reference.toml` edit that drops a
+    /// served tool or leaves a retired one fails here first.
+    #[test]
+    fn the_declared_tool_surface_is_the_closed_set_gateway_serves() {
+        let r = Reference::load().expect("reference.toml parses");
+        let mut declared = r.mcp.tools.clone();
+        declared.sort();
+        let mut expected = vec![
+            // d80: exempt - asserts against reference.toml's own declared value, not a compiled-in dependency
+            "create_task".to_string(),
+            "edit_task".to_string(),
+            "find_tasks".to_string(),
+            "read_task".to_string(),
+            "transition_task".to_string(),
+        ];
+        expected.sort();
+        assert_eq!(
+            declared, expected,
+            "reference.toml's mcp.tools is {declared:?}; the gateway serves {expected:?} \
+             (gateway#96, v0.9.54) — C-06 compares against whatever is declared here, so a \
+             stale or incomplete declaration makes closed-set equality pass for the wrong reason"
+        );
+    }
+
     /// The root is committed and is a certificate.
     #[test]
     fn the_committed_root_is_readable_pem() {
