@@ -204,6 +204,34 @@ mod tests {
         }
     }
 
+    /// C-18's valkey target must name the port valkey actually serves.
+    ///
+    /// argocd#90 (B-V4.3, live 2026-10-10) moved valkey to TLS-only: the
+    /// Service exposes `valkey-tls` on 6380, `valkey-ingress` admits 6380
+    /// only from `app=gateway`, and the pod runs `--port 0` so nothing
+    /// listens on 6379 any more. A target that still names 6379 is not
+    /// merely stale: nobody listens there, so C-18's TCP connect fails for a
+    /// reason that has nothing to do with the NetworkPolicy this row exists
+    /// to test — the same vacuous pass the row's own doctrine (see
+    /// `confinement.rs`) already guards against for an unresolvable name,
+    /// here produced by a closed port instead of a missing one.
+    #[test]
+    fn the_valkey_confinement_target_names_the_live_port() {
+        let r = Reference::load().expect("reference.toml parses");
+        assert!(
+            r.confinement
+                .targets
+                .iter()
+                .any(|t| t == "valkey.yadgar.svc.cluster.local:6380"),
+            "C-18 must target valkey's live TLS port 6380"
+        );
+        assert!(
+            !r.confinement.targets.iter().any(|t| t.contains(":6379")),
+            "6379 is dead since argocd#90 (valkey runs --port 0); a target on a closed port \
+             passes C-18 for the wrong reason, not because the NetworkPolicy denied it"
+        );
+    }
+
     /// The root is committed and is a certificate.
     #[test]
     fn the_committed_root_is_readable_pem() {
