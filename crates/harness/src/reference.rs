@@ -222,6 +222,7 @@ mod tests {
             r.confinement
                 .targets
                 .iter()
+                // d80: exempt - asserts against reference.toml's own declared value, not a compiled-in dependency
                 .any(|t| t == "valkey.yadgar.svc.cluster.local:6380"),
             "C-18 must target valkey's live TLS port 6380"
         );
