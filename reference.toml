@@ -90,8 +90,19 @@ refusal_status = 401
 #
 # Measured 2026-09-05 (`kubectl -n yadgar get svc`): `iam-db` and `task-db` serve
 # 50051, `iam` and `task` serve 50052, each `-db` has its own MariaDB Service in
-# the `yadgar` namespace, and `valkey` serves 6379. There is no
+# the `yadgar` namespace, and `valkey` served 6379. There is no
 # `mariadb.mariadb-system.svc`: that namespace holds only the operator webhook.
+#
+# VALKEY'S PORT CHANGED, AND THE TARGET IS UPDATED RATHER THAN LEFT STALE
+# (argocd#90, B-V4.3, live 2026-10-10 04:51Z). `valkey` now runs `--port 0`,
+# which disables the plaintext listener outright, and serves TLS only on 6380
+# (`Service/valkey`'s one port is `valkey-tls` 6380); `valkey-ingress` admits
+# 6380 only from `app=gateway`. Nobody listens on 6379 any more, so a target
+# still naming it would get refused by the KERNEL, not by the NetworkPolicy
+# this row exists to test — the same vacuous pass the unresolvable-name guard
+# above exists to catch, just one layer down: a closed port "fails" for free
+# and can never show the policy working. The target below is 6380 so the row
+# keeps measuring the NetworkPolicy rather than the absence of a listener.
 #
 # THREE TARGETS ADDED 2026-10-02 (ledger 751): `task-db-mariadb`, `project-db`
 # and `project-db-mariadb`. The list named `task-db` without its MariaDB and
@@ -110,7 +121,7 @@ targets = [
   "iam-db-mariadb.yadgar.svc.cluster.local:3306",
   "task-db-mariadb.yadgar.svc.cluster.local:3306",
   "project-db-mariadb.yadgar.svc.cluster.local:3306",
-  "valkey.yadgar.svc.cluster.local:6379",
+  "valkey.yadgar.svc.cluster.local:6380",
 ]
 connect_timeout_ms = 3000
 
@@ -158,7 +169,9 @@ connect_timeout_ms = 3000
 # `task-db`, `project-db` and `valkey` now also carry live ingress policies in
 # `yadgar` that name their real callers and exclude this runner
 # (`project-db-ingress` admits only `app: project` on 50051 and the
-# `observability` namespace on 9090, read 2026-10-02). The three MariaDB
+# `observability` namespace on 9090, read 2026-10-02; `valkey-ingress` admits
+# only `app: gateway` on 6380, read 2026-10-10 alongside the port move in
+# argocd#90 above). The three MariaDB
 # targets carry none — no policy selects `app.kubernetes.io/name: mariadb` — so
 # they are refused by `estate-front-egress` alone, whose substance is EGRESS. The
 # 18.02s arithmetic is the evidence for egress enforcement on `iam-db-mariadb`,
