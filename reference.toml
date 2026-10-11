@@ -64,7 +64,16 @@ result_type = "complete"
 # for known-bad names. A tool appearing without a deliberate edit here is the
 # review moment ADR-0562 exists to force; if the new name is administrative,
 # privilege escalation is one prompt injection away.
-tools = ["create_task", "read_task", "find_tasks"]
+#
+# TWO TOOLS ADDED 2026-10-10 (estate smoke run 38040035392, 2026-10-10 09:03Z):
+# `edit_task` and `transition_task`. The gateway has served both since
+# gateway#96 (60959d2, released v0.9.54, parent proto v1.15.0) — `tools/list`
+# answered five tools, this file still declared three, and the first smoke run
+# after the settled gate caught the drift as a C-06 failure. Max ruled
+# 2026-10-10: the five-tool set is intended, so the declaration is the one that
+# was stale. Recorded as an addendum rather than a silent rewrite, same as the
+# C-18 valkey-port update above.
+tools = ["create_task", "read_task", "find_tasks", "edit_task", "transition_task"]
 
 [login]
 # C-02. The infrastructure-header allowlist, measured from a live failed login on
