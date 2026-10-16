@@ -50,11 +50,12 @@ jobs:
       RELEASE_APP_CLIENT_ID: ${{ secrets.RELEASE_APP_CLIENT_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
-  # THE TAG PATH. `ci-release.yaml`'s `deployment` job writes a released image
-  # digest into `versions/<module>.yaml` in `yadgarhq/argocd`. This repository
-  # ships no image, so that half is inert here — but the call is declared in the
-  # same shape as every other repository, because a repository whose release path
-  # differs from the estate's is one nobody checks.
+  # THE TAG PATH. `ci-release.yaml` reads the two release App secrets in one
+  # job only: `parent`, which re-pins a released module chart in the parent
+  # chart `yadgarhq/chart`. This repository ships no image and no `chart/`, so
+  # that job skips here — but the call is declared in the same shape as every
+  # other repository, because a repository whose release path differs from the
+  # estate's is one nobody checks.
   #
   # NO RELEASE WILL HAPPEN YET. This repository carries no tag, and the version
   # job refuses to compute a bump from no baseline and says so.
