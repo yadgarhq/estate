@@ -1,16 +1,12 @@
 name: smoke
 
-# WHICH ROLL A RUN WAS ASKED ABOUT, ON THE RUNS LIST (ledger 675). `await-roll`
-# now refuses a roll it cannot confirm, so a red run is either a refusal or a
-# failing contract; the title is what tells a reader which roll it was before
-# they open it. A `schedule` or `workflow_dispatch` run names no roll: it asks
-# the `verdict` job about the settled estate instead (stage 5). Read from the
-# payload and never executed: `run-name` is a title, not a shell.
-run-name: >-
-  smoke — ${{ github.event.client_payload.module || 'settled-state verdict' }}
-  ${{ github.event.client_payload.tag }} (${{ github.event_name }})
+# EVERY RUN ASKS THE `verdict` JOB ABOUT THE SETTLED ESTATE (ledger 675 stage
+# 5). This title used to name the module and tag a `module-rolled` dispatch
+# carried; ledger 675 stage 7 (ledger 1487) retired that trigger, so no run
+# names a roll any more. `run-name` is a title, not a shell.
+run-name: smoke — settled-state verdict (${{ github.event_name }})
 
-# THE VERDICT AFTER EVERY ROLL. Ten rows, under a minute, run on the
+# THE VERDICT ON EVERY SETTLED RENDER. Ten rows, under a minute, run on the
 # `estate-front` runner inside the cluster so that the traffic reaches the edge
 # the way a real client's does.
 #
@@ -23,25 +19,27 @@ run-name: >-
 # C-18 measures it green, so the runner does NOT have line of sight to every
 # service. The registration token and the environment gate are reason enough on
 # their own, and neither depends on the CNI.
-# Three controls, and this trigger list is the first. THREE TRIGGERS, and
-# nothing else: `repository_dispatch` (`module-rolled`), `workflow_dispatch` and
-# `schedule` — none of which a fork can reach. A dispatch needs a credential
-# with write on this repository. A `schedule` run executes the DEFAULT BRANCH's
-# copy of this file, in this repository only; a fork's own schedules run in the
-# fork, which has no access to the `estate-front` scale set or to this
-# repository's environments. (This list read "`repository_dispatch` and
-# `workflow_dispatch`, and nothing else" until ledger 675 stage 5 added the
-# poll; the reason it gave still holds for the third trigger.)
+# Three controls, and this trigger list is the first. TWO TRIGGERS, and
+# nothing else: `workflow_dispatch` and `schedule` — neither of which a fork can
+# reach. A hand run needs a credential with write on this repository. A
+# `schedule` run executes the DEFAULT BRANCH's copy of this file, in this
+# repository only; a fork's own schedules run in the fork, which has no access
+# to the `estate-front` scale set or to this repository's environments. (This
+# list read "`repository_dispatch` and `workflow_dispatch`, and nothing else"
+# until ledger 675 stage 5 added the poll. Stage 7 then removed
+# `repository_dispatch` (`module-rolled`): since ADR-0786 a module release moves
+# nothing in the cluster, so every such run was red with no verdict, ledger
+# 1376.)
 #
-# WHY `schedule` CANNOT REACH THE ROWS WITHOUT A GREEN VERDICT. On `schedule`
-# and `workflow_dispatch` the `smoke` job runs only when the `verdict` job
+# WHY NO RUN CAN REACH THE ROWS WITHOUT A GREEN VERDICT. On both triggers the
+# `smoke` job runs only when the `verdict` job
 # SUCCEEDED and output `run=true`, and `scripts/verdict.py` outputs that only
 # for a green `settled-verdict` from argocd-verify's `settled.yaml` on `main`
 # whose epoch `E = (K, A)` equals the epoch argocd `main` renders now, with no
 # `smoke-certified-<E>` from an earlier run here. Anything else — no verdict, a
 # red one, a token argocd-verify rejects, a mismatch on argocd `main` — leaves
-# `run` false. `repository_dispatch` keeps its old path through `await-roll`
-# until stage 7 retires it.
+# `run` false. There is no second path: the `repository_dispatch` path through
+# `await-roll`, which skipped the `verdict` job, is retired (ledger 675 stage 7).
 #
 # THE `verdict-reader` ENVIRONMENT HOLDS A TOKEN THAT READS EVERY artifact and
 # run log in `yadgarhq/argocd-verify` (ADR-0844: object names, uids and Secret
@@ -81,8 +79,6 @@ run-name: >-
 # free plan, where `Default` is the only group and custom groups are a Team or
 # Enterprise feature. The repository-scoped registration replaces it.
 on:
-  repository_dispatch:
-    types: [module-rolled]
   # THE POLL (ledger 675 stage 5). Every 15 minutes the `verdict` job asks
   # whether argocd-verify judged the current render epoch green; the rows run
   # once per epoch, not once per poll, because `smoke-certified-<E>` records it.
@@ -102,8 +98,9 @@ on:
         default: real
         options: [real, own-github-token, bogus]
 
-# Rolls arrive back to back. Queue rather than cancel: a cancelled smoke run is
-# a roll with no verdict, which is the thing this workflow exists to prevent.
+# A poll and a hand run can overlap. Queue rather than cancel: a cancelled smoke
+# run is a render with no verdict, which is the thing this workflow exists to
+# prevent.
 concurrency:
   group: estate-smoke
   cancel-in-progress: false
@@ -118,7 +115,6 @@ jobs:
   # `settled-verdict` for that epoch with the read-only token, and passes the
   # `smoke` job only what it decided. Never the token.
   verdict:
-    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     environment: verdict-reader
     timeout-minutes: 10
@@ -155,16 +151,14 @@ jobs:
 
   smoke:
     needs: [verdict]
-    # `always()` because `verdict` is SKIPPED on `repository_dispatch`, and a
-    # skipped need skips its dependants unless the condition says otherwise.
-    # On the other two triggers the rows run only on a decided `run=true`.
+    # The rows run only on a decided `run=true`. (An `always()` stood here while
+    # `verdict` was SKIPPED on `repository_dispatch`; that trigger is retired,
+    # ledger 675 stage 7, so GitHub's default `success()` check applies again.)
     # `needs.verdict.result == 'success'` repeats what `run == 'true'` already
     # implies today (`decide` is the job's last step, and `verdict.py` writes
     # `run=false` on every refusal). It is kept as the card's condition so that a
     # step added after `decide` cannot fail and still leave `run=true` standing.
-    if: >-
-      always() && ((github.event_name == 'repository_dispatch') ||
-      (needs.verdict.result == 'success' && needs.verdict.outputs.run == 'true'))
+    if: needs.verdict.result == 'success' && needs.verdict.outputs.run == 'true'
     # THE SCALE SET'S NAME IS THE LABEL. `estate-front` egresses only to kube-dns,
     # the edge, and GitHub — see `infra/estate-front/` in `yadgarhq/deploy`.
     # Until ARC is installed
@@ -172,9 +166,9 @@ jobs:
     # rather than hidden.
     runs-on: estate-front
     # WHERE `ESTATE_PASSWORD` LIVES, and it must NOT require reviewers. Smoke
-    # runs on `module-rolled`, and the promise is a verdict within minutes of
-    # every roll — a reviewer-gated environment turns every roll into a job
-    # waiting on a human. The control is WHICH WORKFLOWS may name the
+    # runs on a 15-minute poll, and the promise is a verdict within minutes of
+    # every settled render — a reviewer-gated environment turns every render
+    # into a job waiting on a human. The control is WHICH WORKFLOWS may name the
     # environment, not a human approving each run.
     environment: estate
     timeout-minutes: 30
@@ -203,27 +197,10 @@ jobs:
         with:
           toolchain: stable
 
-      # THROUGH THE ENVIRONMENT, NEVER INTERPOLATED INTO THE SCRIPT.
-      # `client_payload` is written by whoever sent the dispatch, and `${{ }}`
-      # inside a `run:` block is a shell injection — the class zizmor audits for.
-      # Every value below is read as `$VAR` by a program that treats it as data.
-      # A ROLL THIS STEP CANNOT CONFIRM FAILS IT, and the rows do not run
-      # (ledger 675). It used to print "could not confirm" and exit 0, so the
-      # rows certified the previous pods and the run went green — six measured
-      # false greens. Nothing reads this workflow's conclusion but a person.
-      #
-      # ON `repository_dispatch` ONLY. On the other two triggers the `verdict`
-      # job already established that the estate settled on the current render,
-      # which is a stronger statement than this step can make.
-      - name: wait for the rolled code, or refuse a verdict it cannot confirm
-        if: github.event_name == 'repository_dispatch'
-        env:
-          ESTATE_ROLLED_MODULE: ${{ github.event.client_payload.module }}
-          ESTATE_ROLLED_TAG: ${{ github.event.client_payload.tag }}
-        run: cargo run --locked --bin await-roll
-
+      # THE `verdict` JOB ALREADY ESTABLISHED that the estate settled on the
+      # current render. (An `await-roll` step stood here for `repository_dispatch`
+      # runs; ledger 675 stage 7 retired it with that trigger.)
       - name: say which epoch this run certifies
-        if: github.event_name != 'repository_dispatch'
         env:
           EPOCH: ${{ needs.verdict.outputs.epoch }}
           VERDICT_URL: ${{ needs.verdict.outputs.verdict_url }}
@@ -291,8 +268,8 @@ jobs:
             echo ""
             if [ "$OUTCOME" = skipped ] || [ "$OUTCOME" = cancelled ]; then
               echo "C-18 did NOT run: an earlier step failed or the run was cancelled — the"
-              echo "checkout or toolchain, the roll confirmation, the front-door contracts, or"
-              echo "the 30-minute timeout. This says nothing about confinement."
+              echo "checkout or toolchain, the front-door contracts, or the 30-minute"
+              echo "timeout. This says nothing about confinement."
               exit 0
             fi
             echo "This row has only ever been observed green: nineteen runs at 18.02s, six"
@@ -311,7 +288,7 @@ jobs:
       # dispatches with `recertify`. `!cancelled()` rather than `always()`: a
       # cancelled run certified nothing, and must not block the next poll.
       - name: write the certificate
-        if: "!cancelled() && github.event_name != 'repository_dispatch'"
+        if: "!cancelled()"
         env:
           EPOCH: ${{ needs.verdict.outputs.epoch }}
           VERDICT_URL: ${{ needs.verdict.outputs.verdict_url }}
@@ -321,7 +298,7 @@ jobs:
           printf 'epoch %s\nverdict %s\nconclusion %s\n' "$EPOCH" "$VERDICT_URL" "$CONCLUSION" > "$RUNNER_TEMP/smoke-certified.txt"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: "!cancelled() && github.event_name != 'repository_dispatch'"
+        if: "!cancelled()"
         with:
           name: smoke-certified-${{ needs.verdict.outputs.epoch }}
           path: ${{ runner.temp }}/smoke-certified.txt

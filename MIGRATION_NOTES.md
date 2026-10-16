@@ -92,9 +92,9 @@ It is a per-repository value rather than an inherited one, so it is not
 self-maintaining: the organisation default still reads
 `first_time_contributors`, and what keeps a new repository correct is `apply.sh`
 in `yadgarhq/docs`, which sets it at creation. This is defence in depth anyway:
-`smoke.yaml` triggers on `repository_dispatch`, `workflow_dispatch` and
-`schedule` only (ledger 675 stage 5 added the third), and none is reachable from
-a fork: a fork's schedules run in the fork, which reaches neither the scale set
+`smoke.yaml` triggers on `workflow_dispatch` and `schedule` only (ledger 675
+stage 5 added the poll; stage 7 removed `repository_dispatch`), and neither is
+reachable from a fork: a fork's schedules run in the fork, which reaches neither the scale set
 nor this repository's environments.
 
 ## 3. The CNI change — WITHDRAWN, and there is nothing here for the operator to do
@@ -148,9 +148,9 @@ the answer has to come from a real Calico install in a disposable cluster.
 
 Repository settings → Environments → `estate`.
 
-**It must NOT require reviewers.** Smoke runs on `module-rolled` and the promise
-is a verdict within minutes of every roll; a reviewer-gated environment turns
-every roll into a job waiting on a human. The control is which workflows may name
+**It must NOT require reviewers.** Smoke runs on a 15-minute poll and the
+promise is a verdict within minutes of every settled render; a reviewer-gated
+environment turns every render into a job waiting on a human. The control is which workflows may name
 the environment — `smoke.yaml` and, later, the other suite workflows — not a
 human approving each run.
 
@@ -209,11 +209,12 @@ to restore these after a settings change.
 
 ## 7. Not stage 1, and named here so it is not forgotten
 
-- **`ci-release`'s dispatch step.** The trigger half of "a verdict after every
-  roll" lives in `yadgarhq/actions`: `ci-release.yaml`'s deployment job gains one
-  step that sends `repository_dispatch` to `yadgarhq/estate`, event
-  `module-rolled`, payload `{module, tag, digest}`. This repository's half — the
-  trigger — is built and waiting. Nothing sends the event yet.
+- **`ci-release`'s dispatch step — built, then retired.** `yadgarhq/actions`'
+  `ci-release.yaml` sent `repository_dispatch` `module-rolled` to this repository
+  on every release. Since ADR-0786 a release moves nothing in the cluster, so
+  every such run was red with no verdict (ledger 1376). Ledger 675 stage 7
+  (ledger 1487) deleted the sender, then this repository's trigger and
+  `await-roll`. The settled-state poll is the only automatic trigger.
 - **The GitHub App permissions stage 4 needs — all of them are held. NOTHING TO
   DO.** The App is **`yadgarhq-bot`** (app_id 4814165, installation 158692002,
   installed organisation-wide). It was named `yadgarhq-tagger` when this was

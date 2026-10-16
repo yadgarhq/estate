@@ -10,6 +10,7 @@ here rather than passing unread.
 
 from __future__ import annotations
 
+import copy
 import re
 from pathlib import Path
 
@@ -91,23 +92,60 @@ def evaluate(expr: str, ctx: dict) -> bool:
     return out
 
 
-def reaches_smoke(event: str, verdict_result: str = "success", run: str = "true") -> bool:
+def reaches_smoke(event: str, verdict_result: str = "success", run: str = "true", jobs: dict = JOBS) -> bool:
     ctx = {"github.event_name": event}
-    verdict_runs = evaluate(JOBS["verdict"]["if"], ctx)
+    # No `if:` is GitHub's default, which runs the job.
+    verdict_runs = evaluate(jobs["verdict"].get("if", "always()"), ctx)
     ctx["needs.verdict.result"] = verdict_result if verdict_runs else "skipped"
     ctx["needs.verdict.outputs.run"] = run if verdict_runs else ""
-    return evaluate(JOBS["smoke"]["if"], ctx)
+    smoke_if = jobs["smoke"]["if"]
+    # GitHub's implicit `success()`: without a status function in `if:`, a need
+    # that did not succeed skips the job before the expression is read.
+    if "always()" not in smoke_if and "cancelled()" not in smoke_if and ctx["needs.verdict.result"] != "success":
+        return False
+    return evaluate(smoke_if, ctx)
 
 
-def test_exactly_three_triggers():
-    assert set(TRIGGERS) == {"repository_dispatch", "schedule", "workflow_dispatch"}
-    assert TRIGGERS["repository_dispatch"]["types"] == ["module-rolled"]
+def triggers_of(workflow: dict) -> dict:
+    return workflow.get("on", workflow.get(True))
+
+
+def only_the_poll_and_a_hand_run(workflow: dict) -> bool:
+    return set(triggers_of(workflow)) == {"schedule", "workflow_dispatch"}
+
+
+def test_exactly_two_triggers():
+    assert only_the_poll_and_a_hand_run(SMOKE)
     assert TRIGGERS["schedule"] == [{"cron": "*/15 * * * *"}]
 
 
-def test_repository_dispatch_reaches_smoke_without_the_verdict_job():
-    assert not evaluate(JOBS["verdict"]["if"], {"github.event_name": "repository_dispatch"})
-    assert reaches_smoke("repository_dispatch")
+def test_mutation_restoring_module_rolled_reddens_the_trigger_check():
+    """Ledger 675 stage 7 retired `repository_dispatch` (`module-rolled`). The
+    check above must go red if it comes back."""
+    mutated = copy.deepcopy(SMOKE)
+    triggers_of(mutated)["repository_dispatch"] = {"types": ["module-rolled"]}
+    assert not only_the_poll_and_a_hand_run(mutated)
+
+
+def test_every_event_needs_a_green_verdict():
+    """No event reaches the rows past the `verdict` job any more. Before stage
+    7, `repository_dispatch` skipped `verdict` and still reached `smoke`."""
+    assert "if" not in JOBS["verdict"]
+    for event in ("schedule", "workflow_dispatch", "repository_dispatch"):
+        assert not reaches_smoke(event, "success", "false")
+        assert not reaches_smoke(event, "failure", "")
+
+
+def test_mutation_the_old_dispatch_bypass_reaches_smoke_without_a_verdict():
+    """Proves the test above can fail: restore the pre-stage-7 conditions and
+    `repository_dispatch` reaches the rows with `verdict` skipped."""
+    jobs = copy.deepcopy(JOBS)
+    jobs["verdict"]["if"] = "github.event_name != 'repository_dispatch'"
+    jobs["smoke"]["if"] = (
+        "always() && ((github.event_name == 'repository_dispatch') || "
+        "(needs.verdict.result == 'success' && needs.verdict.outputs.run == 'true'))"
+    )
+    assert reaches_smoke("repository_dispatch", "success", "false", jobs)
 
 
 @pytest.mark.parametrize("event", ["schedule", "workflow_dispatch"])
@@ -119,11 +157,13 @@ def test_the_poll_and_a_hand_run_reach_smoke_only_on_a_decided_run(event):
     assert not reaches_smoke(event, "cancelled", "")
 
 
-def test_await_roll_runs_on_repository_dispatch_only():
-    step = next(s for s in JOBS["smoke"]["steps"] if s.get("run", "").endswith("--bin await-roll"))
-    for event, want in (("repository_dispatch", True), ("schedule", False), ("workflow_dispatch", False)):
-        assert evaluate(step["if"], {"github.event_name": event}) is want
-    assert "inputs." not in str(step["env"])
+def test_no_step_waits_on_a_roll():
+    """Ledger 675 stage 7 deleted `await-roll`; nothing here reads a dispatch payload."""
+    text = (WORKFLOWS / "smoke.yaml").read_text()
+    for step in JOBS["smoke"]["steps"]:
+        assert "await-roll" not in step.get("run", "")
+        assert "ESTATE_ROLLED_" not in str(step.get("env", {}))
+    assert "client_payload" not in text
 
 
 def test_the_certificate_is_uploaded_on_every_verdict_driven_run_pass_or_fail():
@@ -133,7 +173,6 @@ def test_the_certificate_is_uploaded_on_every_verdict_driven_run_pass_or_fail():
     for step in (write, upload):
         assert evaluate(step["if"], {"github.event_name": "schedule"})
         assert evaluate(step["if"], {"github.event_name": "workflow_dispatch"})
-        assert not evaluate(step["if"], {"github.event_name": "repository_dispatch"})
         # a cancelled run certified nothing and must not block the next poll
         assert not evaluate(step["if"], {"github.event_name": "schedule", "cancelled()": True})
 

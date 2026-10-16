@@ -33,10 +33,11 @@ the assembled system behaves as the decisions say it does.
   read path, cross-user confinement, and the runner's own network confinement.
 - ADR-0522's shipped default — an owner reading their own record with the lock
   engaged — is exercised at last.
-- A **gateway** roll's verdict is known to describe the rolled code:
+- A **gateway** roll's verdict was known to describe the rolled code:
   `server/discover` reports the running binary's own release version, and
-  `await-roll` polls until it matches the dispatched tag, compared normalised
-  because the release pipeline strips the leading `v`.
+  `await-roll` polled until it matched the dispatched tag. Ledger 675 stage 7
+  retired `await-roll` with the `module-rolled` trigger; every run now waits on
+  the `verdict` job's settled-state verdict instead.
 
 ## What stage 1 does NOT make true
 
@@ -48,17 +49,13 @@ Stated here rather than left to be inferred.
   `ESTATE_PASSWORD`. All of it is in `MIGRATION_NOTES.md`. Until they exist `smoke.yaml` has no runner and no
   credential, and a dispatched run QUEUES rather than failing — which is easy to
   mistake for a passing one.
-- **`module-rolled` is sent by every release.** This said "Nothing sends
-  `module-rolled` yet"; that is no longer true. The sender is the "ask estate for
-  a verdict on this roll" step in `yadgarhq/actions`' `ci-release.yaml`, which
-  posts `module`, `tag` and `digest` after the version pin is written.
-- **A roll of any module but the gateway cannot be confirmed.** Only the
-  gateway states its own release through the front door. For every other module,
-  `await-roll` says on the run that it cannot confirm the roll and exits
-  non-zero, so the rows do not run and no verdict is reported (ledger 675; it
-  used to exit zero, and six runs certified the previous pods). A manual run
-  with no module and no tag measures what is deployed. Stage 3's A-04 replaces
-  that refusal with digest parity for every module.
+- **`module-rolled` is retired.** Every release used to send it, from the "ask
+  estate for a verdict on this roll" step in `yadgarhq/actions`'
+  `ci-release.yaml`. Since ADR-0786 a release moves nothing in the cluster, so
+  `await-roll` refused or timed out and every such run was red with no verdict
+  (ledger 1376). Ledger 675 stage 7 (ledger 1487) deleted the sender, the
+  trigger and `await-roll`. The rows now run only behind a green settled-state
+  verdict, on the 15-minute poll or a hand run.
 - **C-18 was declared red, has only ever been observed green, and is now an
   ordinary hard check.** This entry read "**C-18 is red.** kindnet enforces no
   NetworkPolicy, so the policy in `yadgarhq/deploy`'s `infra/estate-front/` is the
@@ -143,7 +140,7 @@ way. There is no way to turn validation off, deliberately.
 | Path                 | What                                                                  |
 | -------------------- | --------------------------------------------------------------------- |
 | `crates/harness`     | One TLS trust path, byte-level capture, the MCP envelope, the run key |
-| `crates/front`       | The contracts, and `await-roll`                                       |
+| `crates/front`       | The contracts                                                         |
 | `reference.toml`     | Every declared observable constant the rows assert against            |
 | `ca/root.pem`        | The name-constrained root, public material, committed                 |
 | `scripts/enrol.sh`   | The identity ceremony's second half                                   |
