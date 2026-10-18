@@ -3,10 +3,14 @@
 #
 #   printf '%s' "$SECRET" | ./scripts/enrol.sh ESTATE_PASSWORD
 #
-# THE FIRST HALF IS NOT HERE, and cannot be. ADR-0492's admin path does not
-# exist — there is no `/admin` on the gateway — so the enrolment itself is minted
-# through `iam`'s gRPC, which is an in-cluster act. MIGRATION_NOTES.md holds that
-# step; this script starts from the secret it produces.
+# THE FIRST HALF IS NOT HERE, by design. An administrator mints the user and
+# the enrolment through the gateway's admin surface (ADR-0492, D73):
+# `POST /admin/create-user`, then `POST /admin/issue-enrolment`, whose `token`
+# is the secret this script reads. That half needs an administrator's bearer
+# token, which this script must never hold; it redeems with nothing but the
+# secret. MIGRATION_NOTES.md section 5 holds that step. (This header used to say
+# there was no `/admin` and the enrolment went through `iam`'s gRPC in-cluster;
+# the gateway has served the admin surface since ledger 638.)
 #
 # WHAT THIS PRESERVES, AND WHAT IT DOES NOT. It does NOT preserve ADR-0492's
 # ceremony: one operator mints the enrolment, redeems it, and chooses the

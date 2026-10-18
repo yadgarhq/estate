@@ -21,7 +21,7 @@
 //! the message before reading the row.
 
 use anyhow::Result;
-use estate_front::{find_listed, Identity, Suite, LISTING_PAGE_CAP, LISTING_PAGE_SIZE};
+use estate_front::{find_listed, listing_args, Identity, Suite, LISTING_PAGE_CAP};
 use estate_harness::client::Edge;
 use estate_harness::{auth, mcp, pair_equal};
 use serde_json::json;
@@ -529,10 +529,7 @@ async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
     // THE PROJECT IS SHARED BY EVERY RUN (ledger 1244), and task-db lists
     // oldest first, so the task just created is on the LAST page. Walk them.
     find_listed(&id, LISTING_PAGE_CAP, |token| {
-        let mut args = json!({ "page_size": LISTING_PAGE_SIZE });
-        if let Some(t) = token {
-            args["page_token"] = json!(t);
-        }
+        let args = listing_args(token);
         let caller = &caller;
         let edge = &suite.edge;
         async move { mcp::structured(&mcp::tools_call(edge, r, caller, "find_tasks", args).await?) }
