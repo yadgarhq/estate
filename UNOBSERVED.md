@@ -76,6 +76,24 @@ tool surface — and **that red is the trigger to write the admin contracts**:
 bootstrap-token scope, `is_admin` refusal for non-admins, and `IssueEnrolment`
 idempotency-key refusal per ADR-0519's letter.
 
+**Ledger 1244: whether the run's project claim resolves EXACTLY.** Every run
+claims `estate/smoke`, the one path the seeder registers under the `estate`
+root (`crates/harness/src/run.rs`). A row asserting the gateway's `exact: true`
+for that claim was planned, so that a registry regression shows on a run. It
+cannot be written yet, because nothing at the front door carries the answer:
+in `counting` mode the gateway's `Validator::check` turns a resolution into a
+metric increment and serves the call unchanged. `plans/project-validation.md`
+defers `exact: false` in the tool result to the enforcing flip, and the D39
+notice waits on `queue`, which is not built. A row today would either assert
+nothing or reach past the edge.
+
+The property is held instead by the gateway's counters,
+`yadgar_gateway_project_resolution_total{outcome="exact"}` and
+`yadgar_gateway_project_refusal_total{reason}`, which only Prometheus reads.
+This runner cannot reach Prometheus (`estate-front-egress`). After the flip a
+regression is loud anyway: the claim is refused with a 400, and C-10 goes red.
+The row is written the day the gateway surfaces `exact` to the caller.
+
 ## Not yet built, rather than unobservable
 
 Distinct from everything above: these are observable, and the rows are designed.
