@@ -167,23 +167,50 @@ set. A ceremony that names the accounts otherwise is a one-line edit to
 to, and C-03's positive control is what fails loudly if the file and the accounts
 in `iam` disagree.
 
-**ADR-0492's admin path does not exist**, so the enrolments cannot be minted
-through a front door. They are minted through `iam`'s gRPC, which is an
-in-cluster act — an enumerated exception, done deliberately and logged.
+**The enrolments are minted through the gateway's admin surface** (ADR-0492,
+D73): `POST /admin/create-user`, then `POST /admin/issue-enrolment`, on the same
+edge the suite dials. This section used to say the admin path did not exist and
+the enrolments were minted through `iam`'s gRPC in-cluster; the gateway has
+served `/admin/*` since ledger 638 (`gateway/src/http/admin.rs`).
+
+Both calls need an ADMINISTRATOR's bearer token in `Authorization`. The D73
+bootstrap token (`x-yadgar-bootstrap-token`) does not do here: on
+`create-user` it refuses an ordinary account, and on `issue-enrolment` it admits
+only a zero-credential administrator (ADR-0655/0656). The suite identities are
+ordinary accounts.
 
 For each of the two identities:
 
 ```bash
-# a. Mint the user and an enrolment, in-cluster, via iam's gRPC.
-#    CreateUser, then IssueEnrolment. Capture the enrolment secret; do not
-#    write it to a file.
-#
-# b. Redeem it, and push the password straight into the environment secret.
+# a. Mint the user. `external_id` IS the login username, so it must equal the
+#    name in reference.toml [identity]. The answer is {"user_id": "yadgar:user:..."}.
+#    Omit `is_admin`: it defaults to false, which is what a suite identity is.
+curl -sS --fail-with-body --cacert ca/root.pem \
+  -H "authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' \
+  -X POST https://gateway.yadgar.internal/admin/create-user \
+  --data '{"external_id":"estate-suite","display_name":"estate suite"}'
+
+# b. Mint the enrolment. The answer is {"token", "enrolment_id",
+#    "revoke_existing_credentials"}; `token` is the single-use secret.
+#    Capture it into a variable; do not write it to a file.
+#    On a ROTATION (repeating the ceremony for an account that already has a
+#    password) add "revoke_existing_credentials": true to end the old
+#    credential (ADR-0943). It must be a JSON boolean, and the answer echoes it
+#    as applied, so read the echo rather than assuming.
+curl -sS --fail-with-body --cacert ca/root.pem \
+  -H "authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' \
+  -X POST https://gateway.yadgar.internal/admin/issue-enrolment \
+  --data '{"user_id":"yadgar:user:..."}'
+
+# c. Redeem it, and push the password straight into the environment secret.
 #    The secret arrives on stdin, never in argv: argv is visible in `ps` and
 #    lands in shell history.
 printf '%s' "$ENROLMENT_SECRET" | ./scripts/enrol.sh ESTATE_PASSWORD
 printf '%s' "$ENROLMENT_SECRET_2" | ./scripts/enrol.sh ESTATE_PASSWORD_2
 ```
+
+Off-cluster, the edge is on a NodePort: add `--resolve` the way `enrol.sh` does
+with `ESTATE_EDGE_RESOLVE` and `ESTATE_EDGE_PORT`.
 
 The script prints the username and nothing else. The password is generated, sent
 to the edge, pushed into the GitHub environment secret, and lost — there is

@@ -66,15 +66,16 @@ One line each, with the reason and where the property is held instead.
 
 ## Blocked on missing surface
 
-**ADR-0492's admin path does not exist.** The admin API is described as "served
-by the gateway on a separate path", and that path is not built. So
-"admin creates the account" has no front door, and this is recorded as a
-dependency rather than silently absorbed.
-
-The day `/admin` lands, C-06 goes red — it asserts closed-set equality on the
-tool surface — and **that red is the trigger to write the admin contracts**:
+**ADR-0492's admin path is BUILT, and its contracts are not yet written.** This
+entry used to say the path did not exist and that C-06 going red would be the
+trigger to write the admin contracts. Both halves are now false. The gateway
+serves `POST /admin/create-user`, `/admin/issue-enrolment` and
+`/admin/set-user-admin` (ledger 638, `gateway/src/http/admin.rs`). C-06 never
+went red, because those are axum routes, not MCP tools: ADR-0492 keeps every
+administrative verb out of `tools/list`, so the trigger could never fire. The
+admin contracts are now observable from the front door and simply unwritten:
 bootstrap-token scope, `is_admin` refusal for non-admins, and `IssueEnrolment`
-idempotency-key refusal per ADR-0519's letter.
+idempotency-key refusal per ADR-0519's letter (ledger 1542).
 
 **Ledger 1244: whether the run's project claim resolves EXACTLY.** Every run
 claims `estate/smoke`, the one path the seeder registers under the `estate`
