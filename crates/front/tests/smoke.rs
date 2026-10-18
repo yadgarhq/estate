@@ -21,7 +21,7 @@
 //! the message before reading the row.
 
 use anyhow::Result;
-use estate_front::{Identity, Suite};
+use estate_front::{find_listed, listing_args, Identity, Suite, LISTING_PAGE_CAP};
 use estate_harness::client::Edge;
 use estate_harness::{auth, mcp, pair_equal};
 use serde_json::json;
@@ -270,7 +270,7 @@ async fn c04_a_junk_bearer_token_authenticates_nobody() -> Result<()> {
         &suite.reference,
         &junk,
         "create_task",
-        json!({ "title": format!("estate C-04 {} MUST NOT EXIST", suite.project) }),
+        json!({ "title": format!("estate C-04 {} MUST NOT EXIST", suite.marker) }),
     )
     .await?;
 
@@ -470,6 +470,13 @@ async fn c13_the_mcp_baseline_answers_as_the_revision_defines() -> Result<()> {
 /// their own record with the lock ENGAGED. The arm that makes the setting a
 /// setting is not testable from the front door; `UNOBSERVED.md` says so and says
 /// where it is owed instead.
+///
+/// **THE PROJECT IS SHARED BY EVERY RUN (ledger 1244, ruling B).** Task numbers
+/// come from ONE counter for all runs now, so the by-number read can only be
+/// trusted because the title it must return carries this run's marker — a read
+/// that answered some earlier run's task would fail the title comparison rather
+/// than pass on a coincidence. The listing is walked page by page, because
+/// task-db lists oldest first and this run's task is on the last page.
 #[tokio::test]
 #[ignore = "dials the reference cluster edge; run via `cargo test --test smoke -- --ignored`"]
 async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
@@ -478,7 +485,7 @@ async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
     let caller = mcp::Caller::bearer(suite.token_for(&s).await?, suite.project.clone());
     let r = &suite.reference;
 
-    let title = format!("estate C-10 {}", suite.project);
+    let title = format!("estate C-10 {}", suite.marker);
     let created = mcp::tools_call(
         &suite.edge,
         r,
@@ -519,15 +526,21 @@ async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
         "C-10: the title did not round-trip by number — {by_number}"
     );
 
-    let found =
-        mcp::structured(&mcp::tools_call(&suite.edge, r, &caller, "find_tasks", json!({})).await?)?;
-    anyhow::ensure!(
-        found["tasks"]
-            .as_array()
-            .is_some_and(|t| t.iter().any(|x| x["id"] == json!(id))),
-        "C-10: find_tasks in {} did not list the task it just created — {found}",
-        suite.project
-    );
+    // THE PROJECT IS SHARED BY EVERY RUN (ledger 1244), and task-db lists
+    // oldest first, so the task just created is on the LAST page. Walk them.
+    find_listed(&id, LISTING_PAGE_CAP, |token| {
+        let args = listing_args(token);
+        let caller = &caller;
+        let edge = &suite.edge;
+        async move { mcp::structured(&mcp::tools_call(edge, r, caller, "find_tasks", args).await?) }
+    })
+    .await
+    .map_err(|e| {
+        anyhow::anyhow!(
+            "C-10: find_tasks in {} did not list the task it just created — {e}",
+            suite.project
+        )
+    })?;
     Ok(())
 }
 
@@ -558,6 +571,13 @@ async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
 /// cross-user isolation. So S2 creates and reads its OWN task before either
 /// refusal is measured, and a failure there is reported as a broken SUBJECT
 /// rather than as a broken contract.
+///
+/// **THE SHARED PROJECT CHANGES NOTHING HERE BUT THE TITLES (ledger 1244).**
+/// Both refusals are measured against ids, which are UUIDv7 and global, and
+/// reach is decided per owner, not per project. S2 now has tasks of its own
+/// from earlier runs in the same project; none of them is read, and the derived
+/// id names one of them only if that task shares every character of the real
+/// id but the last eight — its millisecond and most of its random bits.
 #[tokio::test]
 #[ignore = "dials the reference cluster edge; run via `cargo test --test smoke -- --ignored`"]
 async fn c11_another_users_record_is_indistinguishable_from_no_record() -> Result<()> {
@@ -572,7 +592,7 @@ async fn c11_another_users_record_is_indistinguishable_from_no_record() -> Resul
         r,
         &owner,
         "create_task",
-        json!({ "title": format!("estate C-11 {}", suite.project) }),
+        json!({ "title": format!("estate C-11 {}", suite.marker) }),
     )
     .await?;
     let id = mcp::structured(&created)?["id"]
@@ -590,7 +610,7 @@ async fn c11_another_users_record_is_indistinguishable_from_no_record() -> Resul
         r,
         &other,
         "create_task",
-        json!({ "title": format!("estate C-11 control {}", suite.project) }),
+        json!({ "title": format!("estate C-11 control {}", suite.marker) }),
     )
     .await?;
     let made = mcp::structured(&control).map_err(|e| {
