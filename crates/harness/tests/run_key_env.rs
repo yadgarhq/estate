@@ -25,5 +25,7 @@ fn run_key_reads_the_run_id_first_and_the_attempt_second() {
     std::env::set_var("GITHUB_RUN_ATTEMPT", "3");
 
     assert_eq!(run_key(), "1658821493-3");
-    assert_eq!(project_id(), "estate/1658821493-3");
+    // The key feeds titles only. The claim is the one registered path and
+    // does not move with the environment (ledger 1244, ruling B).
+    assert_eq!(project_id(), "estate/smoke");
 }
