@@ -179,42 +179,103 @@ bootstrap token (`x-yadgar-bootstrap-token`) does not do here: on
 only a zero-credential administrator (ADR-0655/0656). The suite identities are
 ordinary accounts.
 
-For each of the two identities:
+**No secret goes into argv.** argv is readable by every process on the machine
+(`ps`, `/proc/<pid>/cmdline`) and lands in shell history. So the admin token is
+read with `read -rs` and reaches curl as a header FILE (`-H @<(...)`), and every
+body that carries a secret goes on stdin.
+
+Set up once per shell:
+
+```bash
+# ADMIN_TOKEN: an administrator's bearer token, from that administrator's own
+# POST /auth/login. Paste it at the silent prompt; it is not echoed and does not
+# enter history.
+read -rs ADMIN_TOKEN
+
+# The edge. Off-cluster (kind) it is on a NodePort, so set ESTATE_EDGE_PORT
+# (18443 on kind-yadgar) and ESTATE_EDGE_RESOLVE (the node address) exactly as
+# for enrol.sh. The PORT must be in the URL: --resolve changes the address the
+# name maps to, never the port curl dials.
+HOST=gateway.yadgar.internal
+PORT="${ESTATE_EDGE_PORT:-443}"
+RESOLVE=()
+[ -n "${ESTATE_EDGE_RESOLVE:-}" ] && RESOLVE=(--resolve "${HOST}:${PORT}:${ESTATE_EDGE_RESOLVE}")
+
+# admin <path>: POST the JSON body on stdin to an /admin route.
+admin() {
+  curl -sS --fail-with-body --cacert ca/root.pem "${RESOLVE[@]}" \
+    -H @<(printf 'authorization: Bearer %s' "$ADMIN_TOKEN") \
+    -H 'content-type: application/json' \
+    -X POST "https://${HOST}:${PORT}$1" --data-binary @-
+}
+```
+
+**First creation**, for each of the two identities (shown for the first;
+repeat with `estate-suite-2`, `USER_ID_2`, `ENROLMENT_SECRET_2`):
 
 ```bash
 # a. Mint the user. `external_id` IS the login username, so it must equal the
-#    name in reference.toml [identity]. The answer is {"user_id": "yadgar:user:..."}.
-#    Omit `is_admin`: it defaults to false, which is what a suite identity is.
-curl -sS --fail-with-body --cacert ca/root.pem \
-  -H "authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' \
-  -X POST https://gateway.yadgar.internal/admin/create-user \
-  --data '{"external_id":"estate-suite","display_name":"estate suite"}'
+#    name in reference.toml [identity]. Omit `is_admin`: it defaults to false,
+#    which is what a suite identity is. The answer is {"user_id": "yadgar:user:..."}.
+USER_ID="$(printf '%s' '{"external_id":"estate-suite","display_name":"estate suite"}' \
+  | admin /admin/create-user \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["user_id"])')"
+echo "$USER_ID"   # not a secret: RECORD IT in the table below
 
 # b. Mint the enrolment. The answer is {"token", "enrolment_id",
-#    "revoke_existing_credentials"}; `token` is the single-use secret.
-#    Capture it into a variable; do not write it to a file.
-#    On a ROTATION (repeating the ceremony for an account that already has a
-#    password) add "revoke_existing_credentials": true to end the old
-#    credential (ADR-0943). It must be a JSON boolean, and the answer echoes it
-#    as applied, so read the echo rather than assuming.
-curl -sS --fail-with-body --cacert ca/root.pem \
-  -H "authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' \
-  -X POST https://gateway.yadgar.internal/admin/issue-enrolment \
-  --data '{"user_id":"yadgar:user:..."}'
+#    "revoke_existing_credentials"}; `token` is the single-use secret. It stays
+#    in a shell variable and is never printed or written to a file.
+RESP="$(printf '{"user_id":"%s"}' "$USER_ID" | admin /admin/issue-enrolment)"
+ENROLMENT_SECRET="$(printf '%s' "$RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+unset RESP
 
 # c. Redeem it, and push the password straight into the environment secret.
-#    The secret arrives on stdin, never in argv: argv is visible in `ps` and
-#    lands in shell history.
 printf '%s' "$ENROLMENT_SECRET" | ./scripts/enrol.sh ESTATE_PASSWORD
-printf '%s' "$ENROLMENT_SECRET_2" | ./scripts/enrol.sh ESTATE_PASSWORD_2
+unset ENROLMENT_SECRET
 ```
 
-Off-cluster, the edge is on a NodePort: add `--resolve` the way `enrol.sh` does
-with `ESTATE_EDGE_RESOLVE` and `ESTATE_EDGE_PORT`.
+**Rotation skips step a.** `create-user` on a name that exists is refused —
+iam-db's `uq_iam_user_blind_index` answers `ALREADY_EXISTS` — and no route
+returns an existing account's `user_id`. That is why first creation records it.
+Rotation runs step b with the recorded id and `revoke_existing_credentials`,
+then step c:
 
-The script prints the username and nothing else. The password is generated, sent
+```bash
+RESP="$(printf '{"user_id":"%s","revoke_existing_credentials":true}' "$USER_ID" \
+  | admin /admin/issue-enrolment)"
+# The answer echoes the flag AS APPLIED. Check it says true before redeeming.
+printf '%s' "$RESP" | python3 -c 'import json,sys; assert json.load(sys.stdin)["revoke_existing_credentials"] is True, "revoke not applied"'
+ENROLMENT_SECRET="$(printf '%s' "$RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+unset RESP
+printf '%s' "$ENROLMENT_SECRET" | ./scripts/enrol.sh ESTATE_PASSWORD
+unset ENROLMENT_SECRET
+```
+
+`revoke_existing_credentials` must be a JSON boolean. Under ADR-0943 it revokes
+EVERY credential the account holds, and it does so AT REDEMPTION — when
+`enrol.sh` runs step c — not when the enrolment is issued. Until step c
+succeeds, the old password still works; once it does, only the new one does.
+
+**Recorded user ids** (not secrets). Fill them in at first creation, in the
+same pull request that records the ceremony.
+
+| Identity         | `user_id`      |
+| ---------------- | -------------- |
+| `estate-suite`   | _not recorded_ |
+| `estate-suite-2` | _not recorded_ |
+
+**BOTH ACCOUNTS ALREADY EXIST, AND THEIR IDS WERE NEVER RECORDED.** They were
+minted through `iam`'s gRPC before this table existed. No gateway route answers
+an existing account's `user_id`: `/auth/login` answers only `token`, and
+`/auth/enrol` answers `token` and `username`. So the first rotation of either
+account has no id to start from. Until one is recovered by some other means,
+the working path is to mint FRESH accounts under new names through step a,
+record their ids here, and change `reference.toml [identity]` in the same pull
+request.
+
+`enrol.sh` prints the username and nothing else. The password is generated, sent
 to the edge, pushed into the GitHub environment secret, and lost — there is
-nothing to recover, which is why rotation is repeating the ceremony.
+nothing to recover, which is why rotation is repeating steps b and c.
 
 ## 6. Apply the standard repository settings and rulesets — **DONE**
 
