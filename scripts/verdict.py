@@ -246,6 +246,14 @@ def contents(gh: GitHub, path: str, ref: str) -> bytes:
 # ── the anchor ──────────────────────────────────────────────────────────────
 
 
+def _parent_count(item) -> int:
+    """Parents of a commits-API item, or a refusal: a missing key is not 'one parent'."""
+    parents = item.get("parents") if isinstance(item, dict) else None
+    if not isinstance(parents, list):
+        raise Red(f"an argocd commit answer carries no parents list: {item!r:.200}")
+    return len(parents)
+
+
 def _commit_list(gh: GitHub, path: str, head: str) -> list[dict]:
     q = urllib.parse.urlencode({"sha": head, "path": path, "per_page": PAGE})
     items = gh.json(f"/repos/{ARGOCD}/commits?{q}")
@@ -254,7 +262,7 @@ def _commit_list(gh: GitHub, path: str, head: str) -> list[dict]:
     out = []
     for item in items:
         sha = item["sha"]
-        if len(item.get("parents", [])) > 1:
+        if _parent_count(item) > 1:
             raise Red(f"commit {sha} touching {path} has two parents; argocd main is squash-only")
         date = datetime.fromisoformat(item["commit"]["committer"]["date"].replace("Z", "+00:00"))
         out.append({"sha": sha, "date": date})
@@ -309,6 +317,8 @@ def check_no_hidden_merge(gh: GitHub, head: str, oldest: str) -> None:
     for page in range(1, MAX_COMPARE_PAGES + 1):
         q = urllib.parse.urlencode({"per_page": PAGE, "page": page})
         body = gh.json(f"/repos/{ARGOCD}/compare/{oldest}...{head}?{q}")
+        if not isinstance(body, dict) or not isinstance(body.get("commits", []), list):
+            raise Red(f"argocd's compare of {oldest}...{head} answered an unexpected shape; cannot rule out a merge commit")
         if body.get("status") not in ("ahead", "identical"):
             raise Red(f"{oldest} is not an ancestor of argocd {head} (compare says {body.get('status')!r}); cannot rule out a merge commit")
         total = body.get("total_commits")
@@ -316,7 +326,7 @@ def check_no_hidden_merge(gh: GitHub, head: str, oldest: str) -> None:
         if not isinstance(total, int):
             raise Red(f"argocd's compare of {oldest}...{head} carries no total_commits; cannot rule out a merge commit")
         for item in commits:
-            if len(item.get("parents", [])) > 1:
+            if _parent_count(item) > 1:
                 raise Red(f"merge commit {item['sha']} on argocd main at or after {oldest}; argocd main is squash-only")
         seen += len(commits)
         if seen >= total:
@@ -578,7 +588,7 @@ def main(env: dict | None = None, transport: Transport = http_transport) -> int:
             GitHub(transport, own, "estate's own artifact listing (needs actions: read)"),
             inp,
         )
-    except (Red, KeyError, ValueError, TypeError) as err:
+    except (Red, KeyError, ValueError, TypeError, AttributeError) as err:
         msg = str(err) if isinstance(err, Red) else f"an input or an API answer has an unexpected shape: {err!r}"
         print(f"::error title=verdict refused::{msg}")
         _emit(env, False, "", "", f"**REFUSED** — {msg}")

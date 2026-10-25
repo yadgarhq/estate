@@ -253,6 +253,7 @@ mod tests {
             "create_task".to_string(),
             "edit_task".to_string(),
             "find_tasks".to_string(),
+            "list_projects".to_string(),
             "read_task".to_string(),
             "transition_task".to_string(),
         ];

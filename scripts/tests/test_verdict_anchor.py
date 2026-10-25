@@ -226,3 +226,38 @@ def test_a_comparison_that_lists_fewer_commits_than_it_counts_is_red():
     api.transport = short
     with pytest.raises(verdict.Red, match="lists .* of .* commits"):
         verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
+
+
+def test_a_commit_with_no_parents_key_is_red_not_a_single_parent():
+    bare = {"sha": "f" * 40, "commit": {"committer": {"date": "2026-10-01T12:00:00Z"}}}
+    api = _with_mainline([commit(C["b"], DATES["b"]), bare, commit(C["a"], DATES["a"])])
+    with pytest.raises(verdict.Red, match="parents"):
+        verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
+
+
+@pytest.mark.parametrize("body", [[], "x", None, {"status": "ahead", "total_commits": 1, "commits": ["x"]},
+                                  {"status": "ahead", "total_commits": 1, "commits": [[]]}])
+def test_a_malformed_compare_body_is_red(body):
+    api = _with_mainline(_deep_mainline(3))
+    real = api.transport
+
+    def bad(url, token):
+        if "/compare/" in url:
+            return verdict.Response(200, json.dumps(body).encode())
+        return real(url, token)
+
+    api.transport = bad
+    with pytest.raises(verdict.Red):
+        verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
+
+
+def test_main_prints_refused_for_an_attribute_error(monkeypatch, tmp_path):
+    def boom(*a, **k):
+        raise AttributeError("'list' object has no attribute 'get'")
+
+    monkeypatch.setattr(verdict, "decide", boom)
+    env = {"GITHUB_REPOSITORY": "yadgarhq/estate", "GITHUB_REPOSITORY_ID": "2002",
+           "GITHUB_OUTPUT": str(tmp_path / "out"), "GITHUB_STEP_SUMMARY": str(tmp_path / "sum"),
+           "VERDICT_TOKEN": "t", "GITHUB_TOKEN": "t"}
+    assert verdict.main(env) == 1
+    assert "REFUSED" in (tmp_path / "sum").read_text()
