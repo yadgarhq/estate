@@ -285,6 +285,12 @@ def merge_history(lists: dict[str, list[dict]]) -> list[str]:
     return merged
 
 
+# The compare API pages at 100 commits. Argocd merges that touch neither gate
+# file pile up on top of an old epoch's anchor, so the range grows without
+# bound; a cap on PAGES keeps the walk finite and fails closed past it.
+MAX_COMPARE_PAGES = 50
+
+
 def check_no_hidden_merge(gh: GitHub, head: str, oldest: str) -> None:
     """Refuse when a merge commit sits in the walked range, whatever the path filter showed.
 
@@ -292,16 +298,32 @@ def check_no_hidden_merge(gh: GitHub, head: str, oldest: str) -> None:
     one parent is hidden (measured on octocat/Hello-World 7fd1a60, path README:
     only the side commit is listed), while argocd's `git log --full-history`
     walk lists it. The two sides could then name different anchors, and estate
-    would wait for a verdict that never comes. One unfiltered page, newest first,
-    down to the oldest commit the walk saw: any commit with two parents is red.
+    would wait for a verdict that never comes. So the whole range `oldest..head`
+    is read through the compare API, which is unfiltered and says whether
+    `oldest` is an ancestor of `head` at all; any commit with two parents is red.
+    A fixed window of newest commits is wrong here: the epoch's anchor ages out
+    of it while the epoch is still current.
     """
-    q = urllib.parse.urlencode({"sha": head, "per_page": PAGE})
-    for item in gh.json(f"/repos/{ARGOCD}/commits?{q}"):
-        if len(item.get("parents", [])) > 1:
-            raise Red(f"merge commit {item['sha']} on argocd main at or after {oldest}; argocd main is squash-only")
-        if item["sha"] == oldest:
+    total = None
+    seen = 0
+    for page in range(1, MAX_COMPARE_PAGES + 1):
+        q = urllib.parse.urlencode({"per_page": PAGE, "page": page})
+        body = gh.json(f"/repos/{ARGOCD}/compare/{oldest}...{head}?{q}")
+        if body.get("status") not in ("ahead", "identical"):
+            raise Red(f"{oldest} is not an ancestor of argocd {head} (compare says {body.get('status')!r}); cannot rule out a merge commit")
+        total = body.get("total_commits")
+        commits = body.get("commits", [])
+        if not isinstance(total, int):
+            raise Red(f"argocd's compare of {oldest}...{head} carries no total_commits; cannot rule out a merge commit")
+        for item in commits:
+            if len(item.get("parents", [])) > 1:
+                raise Red(f"merge commit {item['sha']} on argocd main at or after {oldest}; argocd main is squash-only")
+        seen += len(commits)
+        if seen >= total:
             return
-    raise Red(f"{oldest} is not within the newest {PAGE} commits of argocd main; cannot rule out a merge commit")
+        if not commits:
+            break
+    raise Red(f"argocd's compare of {oldest}...{head} lists {seen} of {total} commits; cannot rule out a merge commit")
 
 
 def find_anchor(gh: GitHub, head: str, now: dict[str, bytes], key_now: str) -> tuple[str, datetime, list[str]]:
