@@ -91,14 +91,16 @@ async fn c14_the_edge_chains_to_the_committed_root_and_not_to_the_public_web_pki
 // C-01..C-03 — ADR-0507. The credential path, and the oracle it must not be.
 // ---------------------------------------------------------------------------
 
-/// C-01 (ADR-0507, D72): a real login answers 200 and discloses exactly one key.
+/// C-01 (ADR-0507, D72): a real login answers 200 and discloses exactly two keys.
 ///
-/// The key set is asserted EXACTLY rather than "contains token". A response that
-/// grew a second key would be one carrying credential material beyond the token
-/// — the failure this row is watching for is disclosure, not absence.
+/// The key set is asserted EXACTLY (`token`, `expires_at`; ADR-0972 (3)) rather
+/// than "contains token". A response that grew a further key would be one
+/// carrying credential material beyond the token — the failure this row is
+/// watching for is disclosure, not absence. `login_body_problem` holds the rule
+/// and its unit tests.
 #[tokio::test]
 #[ignore = "dials the reference cluster edge; run via `cargo test --test smoke -- --ignored`"]
-async fn c01_a_real_login_answers_a_token_and_nothing_else() -> Result<()> {
+async fn c01_a_real_login_answers_a_token_and_its_expiry_and_nothing_else() -> Result<()> {
     let suite = Suite::open()?;
     let s = Identity::primary(&suite.reference)?;
 
@@ -111,15 +113,9 @@ async fn c01_a_real_login_answers_a_token_and_nothing_else() -> Result<()> {
     );
 
     let body = capture.json()?;
-    let keys: Vec<&str> = body
-        .as_object()
-        .map(|m| m.keys().map(String::as_str).collect())
-        .unwrap_or_default();
-    anyhow::ensure!(
-        keys == ["token"],
-        "C-01: the login body's key set is {keys:?}, not exactly [\"token\"]. \
-         A second key is credential material leaking beside the token."
-    );
+    if let Some(problem) = auth::login_body_problem(&body) {
+        anyhow::bail!("C-01: {problem}");
+    }
     anyhow::ensure!(!auth::token_of(&capture)?.is_empty(), "C-01: empty token");
     Ok(())
 }
