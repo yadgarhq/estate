@@ -70,6 +70,7 @@ class FakeGitHub:
         self.routes: dict[str, verdict.Response] = {}
         self.calls: list[tuple[str, str | None]] = []
         self.head = SHA_D41
+        self.mainline: list[dict] = []
         self.verify_artifacts: list[dict] = []
         self.estate_artifacts: dict[str, list[dict]] = {}
         self.statuses: dict[str, int] = {}
@@ -82,14 +83,14 @@ class FakeGitHub:
 
     def argocd(self, head: str, history: dict[str, list[dict]], files: dict[tuple[str, str], bytes],
                mainline: list[dict] | None = None):
-        """`mainline` is the unfiltered commits page; by default the union of the
-        path lists, newest first, every commit with one parent."""
+        """`mainline` is argocd main from `head` down, newest first, served through
+        the compare API; by default the union of the path lists, every commit with
+        one parent."""
         self.head = head
         if mainline is None:
             seen = {it["sha"]: it for items in history.values() for it in items}
             mainline = sorted(seen.values(), key=lambda it: it["commit"]["committer"]["date"], reverse=True)
-        q = urllib.parse.urlencode({"sha": head, "per_page": 100})
-        self.route(f"/repos/{verdict.ARGOCD}/commits?{q}", mainline)
+        self.mainline = mainline
         self.route(f"/repos/{verdict.ARGOCD}/branches/main", {"commit": {"sha": head}})
         for path, items in history.items():
             q = urllib.parse.urlencode({"sha": head, "path": path, "per_page": 100})
@@ -134,6 +135,26 @@ class FakeGitHub:
                    {"path": path, "head_branch": run_branch or branch,
                     "head_repository": {"id": run_head_repo or head_repo}})
 
+    def _compare(self, rest: str) -> verdict.Response:
+        """GitHub's compare: base...head, commits OLDEST first, base excluded, paged.
+
+        A base that is not in `mainline` is not an ancestor of the head: GitHub
+        answers 200 with status "diverged".
+        """
+        spec, _, query = rest.partition("?")
+        base, _, head = spec.partition("...")
+        qs = urllib.parse.parse_qs(query)
+        per_page, page = int(qs.get("per_page", ["30"])[0]), int(qs.get("page", ["1"])[0])
+        assert head == self.head, f"compare asked for {head}, the world's head is {self.head}"
+        shas = [c["sha"] for c in self.mainline]
+        if base not in shas:
+            body = {"status": "diverged", "total_commits": 0, "commits": []}
+        else:
+            newer = self.mainline[: shas.index(base)][::-1]
+            body = {"status": "ahead" if newer else "identical", "total_commits": len(newer),
+                    "commits": newer[(page - 1) * per_page : page * per_page]}
+        return verdict.Response(200, json.dumps(body).encode())
+
     def __call__(self, url: str, token):
         self.calls.append((url, token))
         for prefix, status in self.statuses.items():
@@ -147,6 +168,9 @@ class FakeGitHub:
             name = urllib.parse.parse_qs(url[len(est):])["name"][0]
             epoch = name[len(verdict.CERT_PREFIX):]
             return verdict.Response(200, json.dumps({"artifacts": self.estate_artifacts.get(epoch, [])}).encode())
+        compare = f"{verdict.API}/repos/{verdict.ARGOCD}/compare/"
+        if url.startswith(compare):
+            return self._compare(url[len(compare):])
         if url not in self.routes:
             raise AssertionError(f"the fake was asked for an undeclared URL: {url}")
         return self.routes[url]
