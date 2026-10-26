@@ -8,6 +8,8 @@ d41c07f as the anchor at main, and so must the walk over the API's two lists.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from conftest import SHA_13A, SHA_D41, OWN_TOKEN, FakeGitHub, commit, fixture_files
 
@@ -176,7 +178,86 @@ def test_a_merge_older_than_the_walk_is_not_its_business():
     assert verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))[0] == C["a"]
 
 
-def test_an_oldest_walked_commit_beyond_the_unfiltered_page_is_red():
+def test_an_oldest_walked_commit_that_is_not_an_ancestor_of_the_head_is_red():
     api = _with_mainline([commit(C["b"], DATES["b"])])
-    with pytest.raises(verdict.Red, match="cannot rule out a merge commit"):
+    with pytest.raises(verdict.Red, match="not an ancestor"):
         verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
+
+
+def _deep_mainline(n_between: int, merge_at: int | None = None):
+    """b (head) -> n_between unrelated one-parent commits -> a (the anchor), newest first."""
+    filler = []
+    for i in range(n_between):
+        sha = f"{i + 1:040x}"
+        filler.append(commit(sha, f"2026-10-02T{i // 3600:02d}:{i % 3600 // 60:02d}:{i % 60:02d}Z",
+                             parents=2 if i == merge_at else 1))
+    filler.reverse()
+    return [commit(C["b"], DATES["b"])] + filler + [commit(C["a"], DATES["a"])]
+
+
+def _anchor_over(mainline):
+    api = _with_mainline(mainline)
+    return verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))[0]
+
+
+def test_an_epoch_older_than_one_page_of_argocd_merges_still_anchors():
+    # The 2026-10-24 red: the epoch's anchor sat >100 commits behind main
+    # because argocd merges that touch neither path pile up on top of it.
+    assert _anchor_over(_deep_mainline(250)) == C["a"]
+
+
+def test_a_hidden_merge_on_a_later_page_is_red():
+    with pytest.raises(verdict.Red, match="merge commit"):
+        _anchor_over(_deep_mainline(250, merge_at=10))
+
+
+def test_a_comparison_that_lists_fewer_commits_than_it_counts_is_red():
+    api = _with_mainline(_deep_mainline(30))
+    real = api.transport
+
+    def short(url, token):
+        resp = real(url, token)
+        if "/compare/" in url:
+            body = json.loads(resp.body)
+            body["commits"] = body["commits"][:-1]
+            return verdict.Response(resp.status, json.dumps(body).encode())
+        return resp
+
+    api.transport = short
+    with pytest.raises(verdict.Red, match="lists .* of .* commits"):
+        verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
+
+
+def test_a_commit_with_no_parents_key_is_red_not_a_single_parent():
+    bare = {"sha": "f" * 40, "commit": {"committer": {"date": "2026-10-01T12:00:00Z"}}}
+    api = _with_mainline([commit(C["b"], DATES["b"]), bare, commit(C["a"], DATES["a"])])
+    with pytest.raises(verdict.Red, match="parents"):
+        verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
+
+
+@pytest.mark.parametrize("body", [[], "x", None, {"status": "ahead", "total_commits": 1, "commits": ["x"]},
+                                  {"status": "ahead", "total_commits": 1, "commits": [[]]}])
+def test_a_malformed_compare_body_is_red(body):
+    api = _with_mainline(_deep_mainline(3))
+    real = api.transport
+
+    def bad(url, token):
+        if "/compare/" in url:
+            return verdict.Response(200, json.dumps(body).encode())
+        return real(url, token)
+
+    api.transport = bad
+    with pytest.raises(verdict.Red):
+        verdict.find_anchor(api, C["b"], {T: NEW[T], APP: NEW[APP]}, verdict.render_key(NEW[T], NEW[APP]))
+
+
+def test_main_prints_refused_for_an_attribute_error(monkeypatch, tmp_path):
+    def boom(*a, **k):
+        raise AttributeError("'list' object has no attribute 'get'")
+
+    monkeypatch.setattr(verdict, "decide", boom)
+    env = {"GITHUB_REPOSITORY": "yadgarhq/estate", "GITHUB_REPOSITORY_ID": "2002",
+           "GITHUB_OUTPUT": str(tmp_path / "out"), "GITHUB_STEP_SUMMARY": str(tmp_path / "sum"),
+           "VERDICT_TOKEN": "t", "GITHUB_TOKEN": "t"}
+    assert verdict.main(env) == 1
+    assert "REFUSED" in (tmp_path / "sum").read_text()
