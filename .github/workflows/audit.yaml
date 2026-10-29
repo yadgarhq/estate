@@ -1,0 +1,59 @@
+name: audit
+
+# THE ADR-0561 PARITY AUDITOR, THE NIGHTLY BACKSTOP (yaadgaar 224). It asks the
+# whole estate, once a day, whether every repository pins the latest released
+# tag of every in-org contract (P1) and carries the hooks its class carries (P2).
+# `scripts/audit.py`'s docstring is the specification; this file only runs it.
+# A finding makes the run RED and lists itself in the step summary.
+#
+# TWO TRIGGERS AND NO `pull_request`. The finding is about OTHER repositories,
+# so a pull request here cannot cause or fix one; gating this repository's merges
+# on the estate's drift would turn every unrelated pull request red.
+#
+# READ ONLY, AND ON A GITHUB-HOSTED RUNNER (ADR-0563). The only credential is
+# this run's own `github.token`, scoped to `contents: read`; every repository
+# swept is public, so it reads nothing the anonymous web cannot. `audit.py`
+# issues GET requests and nothing else. Opening adoption pull requests is NOT
+# this workflow's job (ADR-0561: a release proposes its own adoption).
+#
+# GITHUB DISABLES A PUBLIC REPOSITORY'S SCHEDULES AFTER 60 DAYS without
+# repository activity. A nightly auditor that has silently stopped looks exactly
+# like one that finds nothing; check the Actions tab for a recent run.
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: estate-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # `tomllib` needs 3.11 or later; "3.x" is the latest.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.x"
+
+      # Before the token exists in any step's environment.
+      - name: install PyYAML
+        run: python3 -m pip install --disable-pip-version-check "pyyaml==6.0.3"
+
+      - name: read the estate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/audit.py gather --owner yadgarhq --out "$RUNNER_TEMP/snapshot.json"
+
+      - name: judge it
+        run: python3 scripts/audit.py check --snapshot "$RUNNER_TEMP/snapshot.json" --summary "$GITHUB_STEP_SUMMARY"

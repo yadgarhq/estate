@@ -10,7 +10,9 @@ Two halves that will share a credential and a runner and nothing else:
   purpose is to define, after each change, whether the system still works.
 - **The parity auditor** — a shared-contract release opens adoption pull requests
   in every consumer, with a nightly sweep as the backstop that should find
-  nothing. Stage 4; not built.
+  nothing. The nightly sweep is built: `scripts/audit.py`, run by
+  `.github/workflows/audit.yaml` (yaadgaar 224). The release-time adoption pull
+  requests are not this repository's job, and the auditor does not open any.
 
 **This repository is at stage 1.** What that makes true, and what it does not, is
 below. Read it before reading a green run.
@@ -73,8 +75,10 @@ Stated here rather than left to be inferred.
   `yadgarhq/docs` ledger 614, is WITHDRAWN, so the deadline it carried is REMOVED
   rather than re-dated and `smoke.yaml` no longer excuses the step with
   `continue-on-error` (ADR-0687).
-- **This repository is not yet visible to the auditor.** `PROTO_VERSION` is what
-  makes a repository a consumer the auditor sees, and it is deliberately absent:
+- **The auditor sweeps this repository, but not as a proto consumer.** It reads
+  this repository's hooks and its `yadgarhq/actions` rev like any other's
+  (ADR-0561: the auditor includes itself). `PROTO_VERSION` is what makes a
+  repository a proto consumer, and it is deliberately absent:
   the shared CI's `proto` job reads `PROTO_PATHS` and diffs a vendored `proto/`
   against the pin, so a `PROTO_VERSION` with nothing beside it would fail CI from
   the first commit. It arrives with `estate-annex` at stage 3, which is what
@@ -122,6 +126,8 @@ suite whose coverage claim is honest has to write down the gaps.
 cargo test                                # the pure rows: reference parsing, pair-equality, helpers
 cargo test --test smoke -- --ignored      # the contracts, against the reference cluster
 pytest scripts/tests/ -q                  # smoke.yaml's verdict decider and its trigger conditions
+python3 scripts/audit.py gather --owner yadgarhq --out /tmp/s.json   # the auditor, read only
+python3 scripts/audit.py check --snapshot /tmp/s.json
 ```
 
 From a workstation the name has no DNS record and the edge is not on 443, so:
@@ -144,5 +150,6 @@ way. There is no way to turn validation off, deliberately.
 | `reference.toml`     | Every declared observable constant the rows assert against            |
 | `ca/root.pem`        | The name-constrained root, public material, committed                 |
 | `scripts/enrol.sh`   | The identity ceremony's second half                                   |
+| `scripts/audit.py`   | The ADR-0561 parity auditor: pin parity and hook-set conformance      |
 | `UNOBSERVED.md`      | What this suite does not observe, and why                             |
 | `MIGRATION_NOTES.md` | Everything stage 1 needs that this repository cannot do to itself     |
