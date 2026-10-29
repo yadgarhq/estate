@@ -1,0 +1,1187 @@
+{
+ "classes": {
+  "exempt": {
+   "actions": "The producer. Its own .pre-commit-config.yaml runs its hooks from local paths (`repo: local`) at the commit under test, so it pins no rev to adopt."
+  },
+  "sweep": {
+   "exclude": {
+    "argocd-verify": "Private, so GITHUB_TOKEN cannot read it and R1 refuses it; listed so the report says why it is never swept.",
+    "docs": "Private, so GITHUB_TOKEN cannot read it and R1 refuses it; listed so the report says why it is never swept."
+   }
+  }
+ },
+ "owner": "yadgarhq",
+ "repos": [
+  {
+   "actions_revs": [],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "chart-dependencies-resolved",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-yaml",
+    "end-of-file-fixer",
+    "gitleaks",
+    "helm-pin-agrees",
+    "hermetic-git",
+    "mixed-line-ending",
+    "no-build-cache",
+    "no-test-skips",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "shellcheck",
+    "trailing-whitespace"
+   ],
+   "lock_sources": null,
+   "name": "actions",
+   "proto": null,
+   "topics": [],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "check-added-large-files",
+    "check-json",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "mixed-line-ending",
+    "no-test-skips",
+    "operator-applications",
+    "policy-sources-named",
+    "prettier",
+    "runner-image-pinned",
+    "trailing-whitespace"
+   ],
+   "lock_sources": null,
+   "name": "argocd",
+   "proto": null,
+   "topics": [
+    "yadgar-class-base"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-yaml",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-test-skips",
+    "prettier",
+    "pytest-scripts",
+    "trailing-whitespace"
+   ],
+   "lock_sources": null,
+   "name": "chart",
+   "proto": null,
+   "topics": [
+    "yadgar-class-chart"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "check-added-large-files",
+    "check-json",
+    "check-merge-conflict",
+    "check-yaml",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-test-skips",
+    "one-source-per-knob",
+    "prettier",
+    "pytest-scripts",
+    "trailing-whitespace"
+   ],
+   "lock_sources": null,
+   "name": "config",
+   "proto": null,
+   "topics": [
+    "yadgar-class-chart"
+   ],
+   "visibility": "public"
+  },
+  {
+   "archived": true,
+   "disabled": false,
+   "fork": false,
+   "name": "deploy",
+   "topics": [],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [],
+   "name": "dial",
+   "proto": null,
+   "topics": [
+    "yadgar-class-rust-helm"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [],
+   "name": "estate",
+   "proto": null,
+   "topics": [
+    "yadgar-class-rust-app"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "boot-reads-watched",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "chart-baseline",
+    "chart-network-policy",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [
+    [
+     "dial",
+     "v0.2.25"
+    ],
+    [
+     "lifecycle",
+     "v0.2.17"
+    ],
+    [
+     "telemetry",
+     "v0.2.0"
+    ]
+   ],
+   "name": "gateway",
+   "proto": "v1.25.0",
+   "topics": [
+    "yadgar-class-service",
+    "yadgar-deployable"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "boot-reads-watched",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "chart-baseline",
+    "chart-network-policy",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [
+    [
+     "dial",
+     "v0.2.25"
+    ],
+    [
+     "lifecycle",
+     "v0.3.0"
+    ],
+    [
+     "telemetry",
+     "v0.2.0"
+    ]
+   ],
+   "name": "iam",
+   "proto": "v1.24.0",
+   "topics": [
+    "yadgar-class-service",
+    "yadgar-deployable"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "boot-reads-watched",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "chart-baseline",
+    "chart-network-policy",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [
+    [
+     "dial",
+     "v0.2.25"
+    ],
+    [
+     "lifecycle",
+     "v0.3.0"
+    ],
+    [
+     "store",
+     "v0.6.0"
+    ],
+    [
+     "telemetry",
+     "v0.2.0"
+    ]
+   ],
+   "name": "iam-db",
+   "proto": "v1.24.0",
+   "topics": [
+    "yadgar-class-service",
+    "yadgar-deployable"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-doc-default",
+    "cargo-doc-no-default-features",
+    "cargo-fmt",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [],
+   "name": "lifecycle",
+   "proto": null,
+   "topics": [
+    "yadgar-class-rust-helm"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "check-added-large-files",
+    "check-json",
+    "check-merge-conflict",
+    "check-yaml",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-test-skips",
+    "prettier",
+    "pytest-scripts",
+    "trailing-whitespace"
+   ],
+   "lock_sources": null,
+   "name": "platform",
+   "proto": null,
+   "topics": [
+    "yadgar-class-chart"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "boot-reads-watched",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "chart-baseline",
+    "chart-network-policy",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [
+    [
+     "dial",
+     "v0.2.25"
+    ],
+    [
+     "lifecycle",
+     "v0.3.0"
+    ],
+    [
+     "telemetry",
+     "v0.2.0"
+    ]
+   ],
+   "name": "project",
+   "proto": "v1.24.0",
+   "topics": [
+    "yadgar-class-service",
+    "yadgar-deployable"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "boot-reads-watched",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "chart-baseline",
+    "chart-network-policy",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [
+    [
+     "dial",
+     "v0.2.25"
+    ],
+    [
+     "lifecycle",
+     "v0.3.0"
+    ],
+    [
+     "store",
+     "v0.6.0"
+    ],
+    [
+     "telemetry",
+     "v0.2.0"
+    ]
+   ],
+   "name": "project-db",
+   "proto": "v1.24.0",
+   "topics": [
+    "yadgar-class-service",
+    "yadgar-deployable"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "buf-breaking",
+    "buf-breaking-previous",
+    "buf-format",
+    "buf-lint",
+    "check-added-large-files",
+    "check-json",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "mixed-line-ending",
+    "no-test-skips",
+    "prettier",
+    "trailing-whitespace"
+   ],
+   "lock_sources": null,
+   "name": "proto",
+   "proto": null,
+   "topics": [
+    "yadgar-class-base"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [
+    [
+     "dial",
+     "v0.2.20"
+    ],
+    [
+     "lifecycle",
+     "v0.2.23"
+    ],
+    [
+     "telemetry",
+     "v0.2.0"
+    ]
+   ],
+   "name": "seeder",
+   "proto": "v1.24.0",
+   "topics": [
+    "yadgar-class-rust-helm",
+    "yadgar-deployable"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [],
+   "name": "store",
+   "proto": null,
+   "topics": [
+    "yadgar-class-rust-lib"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "boot-reads-watched",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "chart-baseline",
+    "chart-network-policy",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [
+    [
+     "dial",
+     "v0.2.25"
+    ],
+    [
+     "lifecycle",
+     "v0.3.0"
+    ],
+    [
+     "telemetry",
+     "v0.2.0"
+    ]
+   ],
+   "name": "task",
+   "proto": "v1.26.0",
+   "topics": [
+    "yadgar-class-service",
+    "yadgar-deployable"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "boot-reads-watched",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "chart-baseline",
+    "chart-network-policy",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "helm-lint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "pytest-scripts",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [
+    [
+     "dial",
+     "v0.2.25"
+    ],
+    [
+     "lifecycle",
+     "v0.3.0"
+    ],
+    [
+     "store",
+     "v0.6.0"
+    ],
+    [
+     "telemetry",
+     "v0.2.0"
+    ]
+   ],
+   "name": "task-db",
+   "proto": "v1.26.0",
+   "topics": [
+    "yadgar-class-service",
+    "yadgar-deployable"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "hadolint",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [],
+   "name": "telemetry",
+   "proto": "v1.11.1",
+   "topics": [
+    "yadgar-class-rust-lib"
+   ],
+   "visibility": "public"
+  },
+  {
+   "actions_revs": [
+    "v1.42.0"
+   ],
+   "archived": false,
+   "disabled": false,
+   "fork": false,
+   "hooks": [
+    "actionlint",
+    "cargo-clippy",
+    "cargo-clippy-complexity",
+    "cargo-deny",
+    "cargo-fmt",
+    "check-added-large-files",
+    "check-merge-conflict",
+    "check-toml",
+    "check-yaml",
+    "complexity",
+    "end-of-file-fixer",
+    "gitleaks",
+    "mixed-line-ending",
+    "no-compiled-in-defaults",
+    "no-test-skips",
+    "observe-coverage",
+    "prettier",
+    "run-block-size",
+    "trailing-whitespace"
+   ],
+   "lock_sources": [],
+   "name": "yadgar",
+   "proto": null,
+   "topics": [
+    "yadgar-class-rust-app"
+   ],
+   "visibility": "public"
+  }
+ ],
+ "tags": {
+  "actions": [
+   "v1.42.0",
+   "v1.41.0",
+   "v1.40.0",
+   "v1.39.2",
+   "v1.39.1",
+   "v1.39.0",
+   "v1.38.2",
+   "v1.38.1",
+   "v1.38.0",
+   "v1.37.1",
+   "v1.37.0",
+   "v1.36.1",
+   "v1.36.0",
+   "v1.35.0",
+   "v1.34.7",
+   "v1.34.6",
+   "v1.34.5",
+   "v1.34.4",
+   "v1.34.3",
+   "v1.34.2",
+   "v1.34.1",
+   "v1.34.0",
+   "v1.33.1",
+   "v1.33.0",
+   "v1.32.0",
+   "v1.31.0",
+   "v1.30.7",
+   "v1.30.6",
+   "v1.30.5",
+   "v1.30.4",
+   "v1.30.3",
+   "v1.30.2",
+   "v1.30.1",
+   "v1.30.0",
+   "v1.29.6",
+   "v1.29.5",
+   "v1.29.4",
+   "v1.29.3",
+   "v1.29.2",
+   "v1.29.1",
+   "v1.29.0",
+   "v1.28.0",
+   "v1.27.1",
+   "v1.27.0",
+   "v1.26.1",
+   "v1.26.0",
+   "v1.25.2",
+   "v1.25.1",
+   "v1.25.0",
+   "v1.24.0",
+   "v1.23.1",
+   "v1.23.0",
+   "v1.22.1",
+   "v1.22.0",
+   "v1.21.1",
+   "v1.21.0",
+   "v1.20.2",
+   "v1.20.1",
+   "v1.20.0",
+   "v1.19.0",
+   "v1.18.4",
+   "v1.18.3",
+   "v1.18.2",
+   "v1.18.1",
+   "v1.18.0",
+   "v1.17.3",
+   "v1.17.2",
+   "v1.17.1",
+   "v1.17.0",
+   "v1.16.1",
+   "v1.16.0",
+   "v1.15.0",
+   "v1.14.3",
+   "v1.14.2",
+   "v1.14.1",
+   "v1.14.0",
+   "v1.13.7",
+   "v1.13.6",
+   "v1.13.5",
+   "v1.13.4",
+   "v1.13.3",
+   "v1.13.2",
+   "v1.13.1",
+   "v1.13.0",
+   "v1.12.2",
+   "v1.12.1",
+   "v1.12.0",
+   "v1.11.0",
+   "v1.10.2",
+   "v1.10.1",
+   "v1.10.0",
+   "v1.9.0",
+   "v1.8.0",
+   "v1.7.1",
+   "v1.7.0",
+   "v1.6.0",
+   "v1.5.0",
+   "v1.4.1",
+   "v1.4.0",
+   "v1.3.0",
+   "v1.2.0",
+   "v1.1.0",
+   "v1.0.0",
+   "v1"
+  ],
+  "dial": [
+   "v0.2.26",
+   "v0.2.25",
+   "v0.2.24",
+   "v0.2.23",
+   "v0.2.22",
+   "v0.2.21",
+   "v0.2.20",
+   "v0.2.19",
+   "v0.2.18",
+   "v0.2.17",
+   "v0.2.16",
+   "v0.2.15",
+   "v0.2.14",
+   "v0.2.13",
+   "v0.2.12",
+   "v0.2.11",
+   "v0.2.10",
+   "v0.2.9",
+   "v0.2.8",
+   "v0.2.7",
+   "v0.2.6",
+   "v0.2.5",
+   "v0.2.4",
+   "v0.2.3",
+   "v0.2.2",
+   "v0.2.1",
+   "v0.2.0",
+   "v0.1.3",
+   "v0.1.2",
+   "v0.1.1",
+   "v0.1.0"
+  ],
+  "lifecycle": [
+   "v0.3.2",
+   "v0.3.1",
+   "v0.3.0",
+   "v0.2.27",
+   "v0.2.26",
+   "v0.2.25",
+   "v0.2.24",
+   "v0.2.23",
+   "v0.2.22",
+   "v0.2.21",
+   "v0.2.20",
+   "v0.2.19",
+   "v0.2.18",
+   "v0.2.17",
+   "v0.2.16",
+   "v0.2.15",
+   "v0.2.14",
+   "v0.2.13",
+   "v0.2.12",
+   "v0.2.11",
+   "v0.2.10",
+   "v0.2.9",
+   "v0.2.8",
+   "v0.2.7",
+   "v0.2.6",
+   "v0.2.5",
+   "v0.2.4",
+   "v0.2.3",
+   "v0.2.2",
+   "v0.2.1",
+   "v0.2.0",
+   "v0.1.3",
+   "v0.1.2",
+   "v0.1.1",
+   "v0.1.0"
+  ],
+  "proto": [
+   "v1.26.1",
+   "v1.26.0",
+   "v1.25.1",
+   "v1.25.0",
+   "v1.24.3",
+   "v1.24.2",
+   "v1.24.1",
+   "v1.24.0",
+   "v1.23.0",
+   "v1.22.0",
+   "v1.21.2",
+   "v1.21.1",
+   "v1.21.0",
+   "v1.20.1",
+   "v1.20.0",
+   "v1.19.0",
+   "v1.18.0",
+   "v1.17.0",
+   "v1.16.0",
+   "v1.15.0",
+   "v1.14.0",
+   "v1.13.0",
+   "v1.12.3",
+   "v1.12.2",
+   "v1.12.1",
+   "v1.12.0",
+   "v1.11.5",
+   "v1.11.4",
+   "v1.11.3",
+   "v1.11.2",
+   "v1.11.1",
+   "v1.11.0",
+   "v1.10.4",
+   "v1.10.3",
+   "v1.10.2",
+   "v1.10.1",
+   "v1.10.0",
+   "v1.9.1",
+   "v1.9.0",
+   "v1.8.0",
+   "v1.7.1",
+   "v1.7.0",
+   "v1.6.0",
+   "v1.5.0",
+   "v1.4.0",
+   "v1.3.0",
+   "v1.2.0",
+   "v1.1.0",
+   "v1.0.0"
+  ],
+  "store": [
+   "v0.6.4",
+   "v0.6.3",
+   "v0.6.2",
+   "v0.6.1",
+   "v0.6.0",
+   "v0.5.0",
+   "v0.4.6",
+   "v0.4.5",
+   "v0.4.4",
+   "v0.4.3",
+   "v0.4.2",
+   "v0.4.1",
+   "v0.4.0",
+   "v0.3.0",
+   "v0.2.13",
+   "v0.2.12",
+   "v0.2.11",
+   "v0.2.10",
+   "v0.2.9",
+   "v0.2.8",
+   "v0.2.7",
+   "v0.2.6",
+   "v0.2.5",
+   "v0.2.4",
+   "v0.2.3",
+   "v0.2.2",
+   "v0.2.1",
+   "v0.2.0",
+   "v0.1.1",
+   "v0.1.0"
+  ],
+  "telemetry": [
+   "v0.2.7",
+   "v0.2.6",
+   "v0.2.5",
+   "v0.2.4",
+   "v0.2.3",
+   "v0.2.2",
+   "v0.2.1",
+   "v0.2.0",
+   "v0.1.19",
+   "v0.1.18",
+   "v0.1.17",
+   "v0.1.16",
+   "v0.1.15",
+   "v0.1.14",
+   "v0.1.13",
+   "v0.1.12",
+   "v0.1.11",
+   "v0.1.10",
+   "v0.1.9",
+   "v0.1.8",
+   "v0.1.7",
+   "v0.1.6",
+   "v0.1.5",
+   "v0.1.4",
+   "v0.1.3",
+   "v0.1.2",
+   "v0.1.1",
+   "v0.1.0"
+  ]
+ }
+}
