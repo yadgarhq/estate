@@ -2,7 +2,8 @@ name: audit
 
 # THE ADR-0561 PARITY AUDITOR, THE NIGHTLY BACKSTOP (yaadgaar 224). It asks the
 # whole estate, once a day, whether every repository pins the latest released
-# tag of every in-org contract (P1) and carries the hooks its class carries (P2).
+# tag of every in-org contract (P1), carries the hooks its class carries (P2),
+# and can see the release App secrets its own workflows use (P3, yaadgaar 324).
 # `scripts/audit.py`'s docstring is the specification; this file only runs it.
 # A finding makes the run RED and lists itself in the step summary.
 #
@@ -17,13 +18,28 @@ name: audit
 # so a pull request here cannot cause or fix one; gating this repository's merges
 # on the estate's drift would turn every unrelated pull request red.
 #
-# THE AUDIT IS READ ONLY, AND ON A GITHUB-HOSTED RUNNER (ADR-0563). The only
-# credential is this run's own `github.token`. The `audit` job holds it at
+# THE AUDIT IS READ ONLY, AND ON A GITHUB-HOSTED RUNNER (ADR-0563). The
+# `audit` job's only credential is this run's own `github.token`, held at
 # `contents: read`; every repository swept is public, so it reads nothing the
 # anonymous web cannot, and `audit.py` issues GET requests and nothing else.
 # `issues: write` exists in the `route` job alone, which runs no audit code and
 # writes only to this repository's issues. Opening adoption pull requests is
 # NOT this workflow's job (ADR-0561: a release proposes its own adoption).
+#
+# P3 NEEDS ONE MORE CREDENTIAL, AND ONLY THE `secrets` JOB HOLDS IT. Secret
+# listings are not public, and `GITHUB_TOKEN` has no secrets permission, so P3
+# reads them through the App `yadgarhq-audit` (ruling, Max 2026-10-30): Secrets:
+# read and Metadata: read, nothing else, its client id and private key held in
+# this repository's `audit` environment. The key reaches the minting action and
+# no other step. The token it mints is scoped by `repositories:` to the
+# repositories whose own workflows use `RELEASE_APP_*` — read first with
+# `github.token` from public files — so it is never an owner-wide token, and
+# `audit.py needs` refuses an empty list rather than let `owner:` alone mint
+# for every repository. The listings return secret NAMES; no API returns a
+# value. The step that holds the token runs this repository's `audit.py`, never
+# a consumer's code. The `audit` job then judges P3 from the job output,
+# and runs even when `secrets` failed: an empty output is a P3 finding, so a
+# broken credential reads RED with its cause, not as a crash and not as green.
 #
 # GITHUB DISABLES A PUBLIC REPOSITORY'S SCHEDULES AFTER 60 DAYS without
 # repository activity. A nightly auditor that has silently stopped looks exactly
@@ -40,7 +56,67 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  secrets:
+    # MAIN ONLY: a dispatch from another ref must not mint. A modified workflow
+    # on a branch can drop this `if`, so the control that holds then is the
+    # `audit` environment's deployment-branch policy, which allows `main` only.
+    # Skipped here, P3 reads RED with an `(estate)` finding saying so.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: audit
+    permissions:
+      contents: read
+    outputs:
+      visibility: ${{ steps.read.outputs.visibility }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.x"
+
+      # Before any token exists in any step's environment.
+      - name: install PyYAML
+        run: python3 -m pip install --disable-pip-version-check "pyyaml==6.0.3"
+
+      # Public workflow files, read with the run's own token.
+      - name: which repositories use the release App
+        id: needs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/audit.py needs --owner yadgarhq
+          --out "$RUNNER_TEMP/needs.json" --outputs "$GITHUB_OUTPUT"
+
+      # Hash-pinned like every action here. Narrowed to the App's two read
+      # permissions and scoped to the repositories the step above named.
+      - name: mint the token that reads secret names
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.AUDIT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUDIT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ steps.needs.outputs.repos }}
+          permission-secrets: read
+          permission-metadata: read
+
+      - name: what each of them can see
+        id: read
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: >-
+          python3 scripts/audit.py secrets --owner yadgarhq
+          --needs "$RUNNER_TEMP/needs.json" --outputs "$GITHUB_OUTPUT"
+
   audit:
+    needs: secrets
+    # Runs when `secrets` failed or was skipped too: P3 reports the missing
+    # answer as red.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -72,9 +148,14 @@ jobs:
 
       - name: judge it
         id: judge
-        run: >-
-          python3 scripts/audit.py check --snapshot "$RUNNER_TEMP/snapshot.json"
-          --summary "$GITHUB_STEP_SUMMARY" --outputs "$GITHUB_OUTPUT"
+        env:
+          SECRETS_DOC: ${{ needs.secrets.outputs.visibility }}
+          SECRETS_RESULT: ${{ needs.secrets.result }}
+        run: |
+          printf '%s' "$SECRETS_DOC" > "$RUNNER_TEMP/secrets.json"
+          python3 scripts/audit.py check --snapshot "$RUNNER_TEMP/snapshot.json" \
+            --secrets "$RUNNER_TEMP/secrets.json" --secrets-result "$SECRETS_RESULT" \
+            --summary "$GITHUB_STEP_SUMMARY" --outputs "$GITHUB_OUTPUT"
 
   route:
     needs: audit

@@ -25,7 +25,7 @@ import pytest
 import yaml
 
 import audit
-from test_audit import FIX, ROOT, by_name, pristine, repo, whats
+from test_audit import FIX, ROOT, SECRETS_CTX, by_name, pristine, repo, whats
 
 CALLER = "yadgarhq/actions/.github/workflows/repin.yaml@main"
 
@@ -201,7 +201,8 @@ def test_the_workflow_routes_a_red_run_from_a_separate_job():
     doc = yaml.safe_load((ROOT / ".github" / "workflows" / "audit.yaml").read_text())
     assert doc["permissions"] == {}
     jobs = doc["jobs"]
-    assert set(jobs) == {"audit", "route"}
+    # `secrets` is P3's (test_audit_secrets.py pins its one secret-reading step).
+    assert set(jobs) == {"secrets", "audit", "route"}
     audit_job, route = jobs["audit"], jobs["route"]
     assert audit_job["permissions"] == {"contents": "read"}
     assert route["permissions"] == {"contents": "read", "issues": "write"}
@@ -216,7 +217,8 @@ def test_the_workflow_routes_a_red_run_from_a_separate_job():
                 assert re.fullmatch(r"[\w.\-]+/[\w.\-]+@[0-9a-f]{40}", step["uses"]), step["uses"]
             if step.get("uses", "").startswith("actions/checkout@"):
                 assert step["with"] == {"persist-credentials": False}
-            assert "secrets." not in str(step)
+            if step.get("id") != "app":
+                assert not SECRETS_CTX.search(str(step)), step.get("name")
             # zizmor template injection: expressions reach a script through env only.
             assert "${{" not in step.get("run", ""), step.get("name")
     judge = audit_job["steps"][-1]
