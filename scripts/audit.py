@@ -16,6 +16,12 @@ recorded estates and never on the network:
           A git source with no `tag=` (a `rev=` or `branch=`) is a finding;
         - the `rev:` of the `https://github.com/<owner>/actions` block in
           `.pre-commit-config.yaml`.
+      P1 also asks who ADVANCES those pins (ruling, Max 2026-10-30): a
+      repository with any in-org git package in `Cargo.lock` must carry
+      `.github/workflows/repin.yaml` with a job that calls
+      `<owner>/actions/.github/workflows/repin.yaml@`. Without that caller
+      nothing proposes the adoption, and the pin stays behind until a human
+      notices.
   P2  HOOK-SET CONFORMANCE BY CLASS (ruling, Max 2026-10-29). Classes are
       deployable, crate, chart, infra and docs. A hook id is REQUIRED in a class
       when at least 80% of that class's repositories carry it; a repository
@@ -23,10 +29,17 @@ recorded estates and never on the network:
       `.pre-commit-config.yaml` (pre-commit-hooks, actions, local), because the
       task names local hooks (`pytest-scripts`, `cargo-doc-*`) among the drift.
 
-The class of a repository is derived from GitHub topics, in this order: the
-`yadgar-deployable` topic makes it `deployable`; otherwise its ONE
-`yadgar-class-<name>` topic is mapped through CLASS_MAP. Zero or several class
-topics is a finding (the topics are mutable by any repository admin).
+The class of a repository is derived from GitHub topics, in this order
+(ruling, Max 2026-10-30):
+  1. an EXPLICIT `estate-class-<class>` topic, where `<class>` is one of the
+     five ruling classes, names it outright. Several, or an unknown class, is
+     a finding. The prefix is deliberately not `yadgar-class-`: that one is
+     `classes.json` `topic_prefix` in `yadgarhq/actions`, whose sweep refuses a
+     repository with two topics under it;
+  2. otherwise the `yadgar-deployable` topic makes it `deployable`;
+  3. otherwise its ONE `yadgar-class-<name>` topic is mapped through CLASS_MAP,
+     the legacy fallback. Zero or several is a finding.
+The topics are mutable by any repository admin; the auditor only reads them.
 
 ENUMERATION matches `yadgarhq/actions` `scripts/sweep.py`: public repositories
 only (the workflow's GITHUB_TOKEN cannot read a private one, and a local run
@@ -38,10 +51,13 @@ this repository is a consumer like any other (ADR-0561).
 Commands:
 
     audit.py gather --owner O --out snapshot.json      read GitHub, write facts
-    audit.py check  --snapshot snapshot.json [--summary PATH]
+    audit.py check  --snapshot snapshot.json [--summary PATH] [--outputs PATH]
 
-`check` writes a Markdown report and exits 1 when any predicate fails. Both
-read only: `gather` issues GET requests through `gh api` and nothing else.
+`check` writes a Markdown report and exits 1 when any predicate fails. With
+`--outputs` (the step's $GITHUB_OUTPUT) it also hands `verdict` (green or red)
+and `report` to the workflow's `route` job, which keeps one GitHub issue in
+step with the result through `scripts/audit_issue.py`. Both commands here read
+only: `gather` issues GET requests through `gh api` and nothing else.
 
 Tests: python3 -m pytest scripts/tests -q
 """
@@ -51,6 +67,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import secrets
 import subprocess
 import sys
 import tomllib
@@ -60,11 +77,13 @@ import yaml
 
 DEPLOYABLE_TOPIC = "yadgar-deployable"
 CLASS_PREFIX = "yadgar-class-"
-# `yadgar-class-*` topic -> ruling class. `yadgar-deployable` is checked first,
-# so `service` and `seeder`'s `rust-helm` both land in `deployable`. THREE FITS
-# ARE LOOSE and the report says so rather than hiding it: `base` holds argocd
-# and proto (and the private docs), `rust-app` holds estate and yadgar, and no
-# topic marks a docs repository, so `docs` has no public member.
+EXPLICIT_PREFIX = "estate-class-"
+# The LEGACY fallback: `yadgar-class-*` topic -> ruling class, consulted only
+# when no `estate-class-*` topic names the class outright. `yadgar-deployable`
+# is checked first, so `service` and `seeder`'s `rust-helm` both land in
+# `deployable`. THREE FITS ARE LOOSE, which is why the explicit topics exist:
+# `base` holds argocd and proto (and the private docs), `rust-app` holds estate
+# and yadgar, and no `yadgar-class-*` topic means docs.
 CLASS_MAP = {
     "service": "deployable",
     "rust-lib": "crate",
@@ -79,6 +98,7 @@ CLASSES = ("deployable", "crate", "chart", "infra", "docs")
 THRESHOLD = (4, 5)
 PROTO = "proto"
 ACTIONS = "actions"
+REPIN_PATH = ".github/workflows/repin.yaml"
 GH_TIMEOUT = 60
 MAX_PAGES = 10
 SEMVER = re.compile(r"v([0-9]{1,6})\.([0-9]{1,6})\.([0-9]{1,6})")
@@ -137,6 +157,13 @@ def pre_commit(text, owner):
     return revs, sorted(ids)
 
 
+def repin_callers(text):
+    """Every job's `uses:` in a workflow file, sorted."""
+    doc = yaml.safe_load(text) or {}
+    jobs = doc.get("jobs") or {}
+    return sorted(str(j["uses"]) for j in jobs.values() if isinstance(j, dict) and "uses" in j)
+
+
 def proto_pin(text):
     return text.strip() if text is not None else None
 
@@ -155,6 +182,13 @@ def in_sweep(repo, classes_cfg):
 
 def class_of(topics):
     """`(class, None)` or `(None, why)`."""
+    explicit = [t[len(EXPLICIT_PREFIX):] for t in topics if t.startswith(EXPLICIT_PREFIX)]
+    if len(explicit) > 1:
+        return None, f"{len(explicit)} `{EXPLICIT_PREFIX}*` topics, need at most one"
+    if explicit:
+        if explicit[0] not in CLASSES:
+            return None, f"`{EXPLICIT_PREFIX}{explicit[0]}` is not a class ({', '.join(CLASSES)})"
+        return explicit[0], None
     if DEPLOYABLE_TOPIC in topics:
         return "deployable", None
     found = [t[len(CLASS_PREFIX):] for t in topics if t.startswith(CLASS_PREFIX)]
@@ -202,7 +236,23 @@ def pin_parity(snap):
                 findings.append(finding("P1", repo["name"], f"`{producer}` has no released `vX.Y.Z` tag"))
             elif tag != want:
                 findings.append(finding("P1", repo["name"], f"`{producer}` pinned at `{tag}`, latest `{want}`"))
+        why = repin_gap(repo, snap["owner"])
+        if why:
+            findings.append(finding("P1", repo["name"], why))
     return findings, table, latest
+
+
+def repin_gap(repo, owner):
+    """Why a repository with an in-org git package lacks the repin caller, or None."""
+    if not repo.get("lock_sources"):
+        return None
+    uses = repo.get("repin_uses")
+    if uses is None:
+        return f"pins in-org git crates but has no `{REPIN_PATH}`"
+    caller = f"{owner}/{ACTIONS}/{REPIN_PATH}"
+    if not any(u.startswith(caller + "@") for u in uses):
+        return f"`{REPIN_PATH}` does not call `{caller}`"
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -272,9 +322,9 @@ def report(snap):
         n = len(c["members"])
         req = ", ".join(f"{i} ({k}/{n})" for i, k in sorted(c["required"].items())) or "-"
         out.append(f"| {cls} | {', '.join(c['members']) or '(none public)'} | {req} |")
-    out += ["", "Class map: `yadgar-deployable` -> deployable, then "
-            + ", ".join(f"`{k}` -> {v}" for k, v in CLASS_MAP.items())
-            + ". No topic marks a docs repository.", "", "## Findings", ""]
+    out += ["", f"Class map: an `{EXPLICIT_PREFIX}<class>` topic names the class outright; "
+            "without one, `yadgar-deployable` -> deployable, then "
+            + ", ".join(f"`{k}` -> {v}" for k, v in CLASS_MAP.items()) + ".", "", "## Findings", ""]
     out += [f"- {f['predicate']} `{f['repo']}`: {f['what']}" for f in p1 + p2] or ["- none"]
     return "\n".join(out) + "\n", 1 if p1 or p2 else 0
 
@@ -335,6 +385,9 @@ def gather(owner, get=gh_get):
         repo["proto"] = proto_pin(get(f"{base}/PROTO_VERSION", raw=True))
         lock = get(f"{base}/Cargo.lock", raw=True)
         repo["lock_sources"] = lock_sources(lock, owner) if lock is not None else None
+        if repo["lock_sources"]:
+            caller = get(f"{base}/{REPIN_PATH}", raw=True)
+            repo["repin_uses"] = repin_callers(caller) if caller is not None else None
     producers = {p for r in snap["repos"] for p, _ in pins_of(r)}
     for producer in sorted(producers):
         tags = paged(get, f"repos/{owner}/{producer}/tags")
@@ -352,6 +405,7 @@ def main(argv):
     c = sub.add_parser("check")
     c.add_argument("--snapshot", required=True)
     c.add_argument("--summary")
+    c.add_argument("--outputs")
     args = ap.parse_args(argv)
     if args.cmd == "gather":
         with open(args.out, "w", encoding="utf-8") as fh:
@@ -364,7 +418,21 @@ def main(argv):
     if args.summary:
         with open(args.summary, "a", encoding="utf-8") as fh:
             fh.write(text)
+    if args.outputs:
+        write_outputs(args.outputs, {"verdict": "red" if code else "green", "report": text})
     return code
+
+
+def write_outputs(path, values):
+    """Append to a $GITHUB_OUTPUT file; a multi-line value gets a fresh delimiter."""
+    with open(path, "a", encoding="utf-8") as fh:
+        for key, value in values.items():
+            value = value.rstrip("\n")
+            if "\n" not in value:
+                fh.write(f"{key}={value}\n")
+                continue
+            delim = f"EOF_{secrets.token_hex(16)}"
+            fh.write(f"{key}<<{delim}\n{value}\n{delim}\n")
 
 
 if __name__ == "__main__":
