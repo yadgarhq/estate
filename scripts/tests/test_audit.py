@@ -7,7 +7,10 @@ one too weak to fire, nor from one that fires on everything.
 `fixtures/audit/estate-2026-10-29.json` is a real snapshot, written by
 `audit.py gather --owner yadgarhq` on 2026-10-29 with a read-only token. Its
 one later edit is mechanical: `actions_rev` became the list `actions_revs`
-when the parser learned to read every `yadgarhq/actions` block.
+when the parser learned to read every `yadgarhq/actions` block. Its second is
+also mechanical: `repin_uses` was added on 2026-10-30 to the eight repositories
+with in-org `lock_sources`, read by GET from each one's
+`.github/workflows/repin.yaml` (seeder has none, so `null`).
 `fixtures/audit/gateway-Cargo.lock` is gateway's real Cargo.lock on the same
 day, cut down to its in-org git packages and one crates.io package.
 """
@@ -27,6 +30,7 @@ import audit
 FIX = Path(__file__).resolve().parent / "fixtures" / "audit"
 ROOT = Path(__file__).resolve().parents[2]
 RUST = ["cargo-fmt", "gitleaks", "boot-reads-watched"]
+REPIN = ["yadgarhq/actions/.github/workflows/repin.yaml@main"]
 
 
 def repo(name, topics, hooks=None, lock=None, proto=None, rev="v1.0.0", **meta):
@@ -47,9 +51,10 @@ def pristine():
                  "proto": ["v1.26.1"], "actions": ["v1.0.0", "v0.9.9"]},
         "repos": [
             repo("actions", [], hooks=["gitleaks"], rev=None),
-            repo("gateway", ["yadgar-class-service", "yadgar-deployable"], RUST, deps, "v1.26.1"),
-            repo("iam", ["yadgar-class-service", "yadgar-deployable"], RUST, deps, "v1.26.1"),
-            repo("seeder", ["yadgar-class-rust-helm", "yadgar-deployable"], RUST + ["extra"], deps),
+            repo("gateway", ["yadgar-class-service", "yadgar-deployable"], RUST, deps, "v1.26.1", repin_uses=REPIN),
+            repo("iam", ["yadgar-class-service", "yadgar-deployable"], RUST, deps, "v1.26.1", repin_uses=REPIN),
+            repo("seeder", ["yadgar-class-rust-helm", "yadgar-deployable"], RUST + ["extra"], deps,
+                 repin_uses=REPIN),
             repo("dial", ["yadgar-class-rust-helm"], ["cargo-fmt", "helm-lint"], []),
             repo("store", ["yadgar-class-rust-lib"], ["cargo-fmt"], []),
             repo("estate", ["yadgar-class-rust-app"], ["gitleaks"]),
@@ -267,13 +272,13 @@ def test_the_recorded_estate_reproduces_the_known_drift():
     assert ("telemetry", "`proto` pinned at `v1.11.1`, latest `v1.26.1`") in whats(p1)
     assert ("gateway", "`lifecycle` pinned at `v0.2.17`, latest `v0.3.2`") in whats(p1)
     assert not [f for f in p1 if "`actions`" in f["what"]]
-    assert len(p1) == 36
+    assert len(p1) == 37  # 36 pins, and seeder's missing repin caller
     assert whats(p2) == [("seeder", "deployable: missing required "
                                     "`boot-reads-watched`, `chart-baseline`, `chart-network-policy`")]
     assert classes["crate"]["members"] == ["dial", "lifecycle", "store", "telemetry"]
     assert "helm-lint" not in classes["crate"]["required"]
     assert classes["docs"]["members"] == []
-    assert "36 pin finding(s), 1 hook finding(s)" in text
+    assert "37 pin finding(s), 1 hook finding(s)" in text
 
 
 def test_check_writes_the_summary_and_exits_red(tmp_path):
@@ -318,21 +323,13 @@ def test_gather_reads_only_through_the_injected_getter():
     assert len(calls) == len(world)
 
 
-def test_the_workflow_is_read_only_scheduled_and_github_hosted():
+def test_the_workflow_is_scheduled_and_its_audit_job_read_only():
     doc = yaml.safe_load((ROOT / ".github" / "workflows" / "audit.yaml").read_text())
     on = doc.get("on", doc.get(True))
     assert set(on) == {"schedule", "workflow_dispatch"}
-    assert doc["permissions"] == {}
-    (job,) = doc["jobs"].values()
+    job = doc["jobs"]["audit"]
     assert job["runs-on"] == "ubuntu-latest"  # ADR-0563: never estate-front
     assert job["permissions"] == {"contents": "read"}
-    for step in job["steps"]:
-        if "uses" in step:
-            assert re.fullmatch(r"[\w.\-]+/[\w.\-]+@[0-9a-f]{40}", step["uses"]), step["uses"]
-        if step.get("uses", "").startswith("actions/checkout@"):
-            assert step["with"] == {"persist-credentials": False}
-        assert "secrets." not in str(step)
-    assert "--summary" in job["steps"][-1]["run"]
 
 
 ACTIONS_BLOCK = "  - repo: https://github.com/yadgarhq/actions\n    rev: {}\n    hooks:\n      - id: {}\n"

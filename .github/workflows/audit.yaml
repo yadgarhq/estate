@@ -6,15 +6,24 @@ name: audit
 # `scripts/audit.py`'s docstring is the specification; this file only runs it.
 # A finding makes the run RED and lists itself in the step summary.
 #
+# A RED RUN IS NEVER SILENT (ruling, Max 2026-10-30). The `route` job keeps ONE
+# issue in this repository in step with the result: opened or rewritten on red,
+# closed on the first green, commented on when the audit job crashed before it
+# reached a verdict. `scripts/audit_issue.py`'s docstring is that job's
+# specification. It routes runs of `main` only, so a dispatch from a branch
+# cannot close the issue.
+#
 # TWO TRIGGERS AND NO `pull_request`. The finding is about OTHER repositories,
 # so a pull request here cannot cause or fix one; gating this repository's merges
 # on the estate's drift would turn every unrelated pull request red.
 #
-# READ ONLY, AND ON A GITHUB-HOSTED RUNNER (ADR-0563). The only credential is
-# this run's own `github.token`, scoped to `contents: read`; every repository
-# swept is public, so it reads nothing the anonymous web cannot. `audit.py`
-# issues GET requests and nothing else. Opening adoption pull requests is NOT
-# this workflow's job (ADR-0561: a release proposes its own adoption).
+# THE AUDIT IS READ ONLY, AND ON A GITHUB-HOSTED RUNNER (ADR-0563). The only
+# credential is this run's own `github.token`. The `audit` job holds it at
+# `contents: read`; every repository swept is public, so it reads nothing the
+# anonymous web cannot, and `audit.py` issues GET requests and nothing else.
+# `issues: write` exists in the `route` job alone, which runs no audit code and
+# writes only to this repository's issues. Opening adoption pull requests is
+# NOT this workflow's job (ADR-0561: a release proposes its own adoption).
 #
 # GITHUB DISABLES A PUBLIC REPOSITORY'S SCHEDULES AFTER 60 DAYS without
 # repository activity. A nightly auditor that has silently stopped looks exactly
@@ -36,6 +45,12 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    # Job outputs are evaluated when the job ends, so a red `judge it` step
+    # still hands its verdict on. An empty verdict means the job never got
+    # that far, which `route` treats as a crash.
+    outputs:
+      verdict: ${{ steps.judge.outputs.verdict }}
+      report: ${{ steps.judge.outputs.report }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,4 +71,31 @@ jobs:
         run: python3 scripts/audit.py gather --owner yadgarhq --out "$RUNNER_TEMP/snapshot.json"
 
       - name: judge it
-        run: python3 scripts/audit.py check --snapshot "$RUNNER_TEMP/snapshot.json" --summary "$GITHUB_STEP_SUMMARY"
+        id: judge
+        run: >-
+          python3 scripts/audit.py check --snapshot "$RUNNER_TEMP/snapshot.json"
+          --summary "$GITHUB_STEP_SUMMARY" --outputs "$GITHUB_OUTPUT"
+
+  route:
+    needs: audit
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # the checkout of this repository
+      issues: write # the one audit issue: open, rewrite, comment, close
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # `audit_issue.py` imports nothing outside the standard library, so the
+      # runner's own python3 is enough.
+      - name: route the result to the audit issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERDICT: ${{ needs.audit.outputs.verdict }}
+          REPORT: ${{ needs.audit.outputs.report }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 scripts/audit_issue.py

@@ -270,6 +270,9 @@
    ],
    "name": "gateway",
    "proto": "v1.25.0",
+   "repin_uses": [
+    "yadgarhq/actions/.github/workflows/repin.yaml@main"
+   ],
    "topics": [
     "yadgar-class-service",
     "yadgar-deployable"
@@ -326,6 +329,9 @@
    ],
    "name": "iam",
    "proto": "v1.24.0",
+   "repin_uses": [
+    "yadgarhq/actions/.github/workflows/repin.yaml@main"
+   ],
    "topics": [
     "yadgar-class-service",
     "yadgar-deployable"
@@ -386,6 +392,9 @@
    ],
    "name": "iam-db",
    "proto": "v1.24.0",
+   "repin_uses": [
+    "yadgarhq/actions/.github/workflows/repin.yaml@main"
+   ],
    "topics": [
     "yadgar-class-service",
     "yadgar-deployable"
@@ -513,6 +522,9 @@
    ],
    "name": "project",
    "proto": "v1.24.0",
+   "repin_uses": [
+    "yadgarhq/actions/.github/workflows/repin.yaml@main"
+   ],
    "topics": [
     "yadgar-class-service",
     "yadgar-deployable"
@@ -573,6 +585,9 @@
    ],
    "name": "project-db",
    "proto": "v1.24.0",
+   "repin_uses": [
+    "yadgarhq/actions/.github/workflows/repin.yaml@main"
+   ],
    "topics": [
     "yadgar-class-service",
     "yadgar-deployable"
@@ -660,6 +675,7 @@
    ],
    "name": "seeder",
    "proto": "v1.24.0",
+   "repin_uses": null,
    "topics": [
     "yadgar-class-rust-helm",
     "yadgar-deployable"
@@ -753,6 +769,9 @@
    ],
    "name": "task",
    "proto": "v1.26.0",
+   "repin_uses": [
+    "yadgarhq/actions/.github/workflows/repin.yaml@main"
+   ],
    "topics": [
     "yadgar-class-service",
     "yadgar-deployable"
@@ -813,6 +832,9 @@
    ],
    "name": "task-db",
    "proto": "v1.26.0",
+   "repin_uses": [
+    "yadgarhq/actions/.github/workflows/repin.yaml@main"
+   ],
    "topics": [
     "yadgar-class-service",
     "yadgar-deployable"
