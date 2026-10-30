@@ -31,6 +31,8 @@ FIX = Path(__file__).resolve().parent / "fixtures" / "audit"
 ROOT = Path(__file__).resolve().parents[2]
 RUST = ["cargo-fmt", "gitleaks", "boot-reads-watched"]
 REPIN = ["yadgarhq/actions/.github/workflows/repin.yaml@main"]
+# The `secrets` CONTEXT inside an expression; `needs.secrets.outputs` is a job's output.
+SECRETS_CTX = re.compile(r"\$\{\{[^}]*?(?<![.\w])secrets\.")
 
 
 def repo(name, topics, hooks=None, lock=None, proto=None, rev="v1.0.0", **meta):
