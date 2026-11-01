@@ -195,7 +195,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: stable
+          # ADR-1118: one org-wide Rust, pinned. Keep equal to rust-toolchain.toml
+          # (the action takes a literal and cannot read that file).
+          toolchain: 1.99.1
 
       # THE `verdict` JOB ALREADY ESTABLISHED that the estate settled on the
       # current render. (An `await-roll` step stood here for `repository_dispatch`
