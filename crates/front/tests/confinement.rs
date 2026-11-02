@@ -34,6 +34,12 @@
 //! first smoke run that REACHES this step is their first reading, and once
 //! ledger 675 lands a non-gateway roll refuses before this step runs.
 //!
+//! **AND THE 30.0s IS THE SEVEN-TARGET LIST'S.** Ledger 1243 added `iam`,
+//! `task`, `project`, `nats`, `nats-headless:8222` and `gateway`: thirteen
+//! targets on nineteen addresses, so an all-dropped run takes about 57.0s and
+//! one acceptance finishes red at about 54s. `reference.toml`'s `inventory`
+//! is the closed set of `yadgar` Services the targets are checked against.
+//!
 //! **THE DEADLINE MACHINERY IS GONE, AND IT WAS REMOVED RATHER THAN RE-DATED
 //! (ADR-0687).** This file carried a paragraph reading "**THE RED CARRIES A
 //! DEADLINE, AND THAT IS NOT DECORATION.** ADR-0561's own doctrine is that a
@@ -145,7 +151,8 @@ fn c18_failure_message(reachable: &[String]) -> String {
          measurement was right and the inference from it was wrong: kindnetd \
          v20260528-9350166c runs a kube-network-policies controller, ledger 614 is WITHDRAWN, \
          and this row was observed green nineteen times at exactly 18.02s, six 3000ms drops \
-         against the four targets it then held (ledger 751 added three more, about 30.0s). So \
+         against the four targets it then held (ledger 751 added three more, about 30.0s; \
+         ledger 1243 six more, thirteen targets on nineteen addresses, about 57.0s). So \
          there is no deadline to escalate and nothing to wait for, and a \
          connection that SUCCEEDS is a real regression: read estate-front-egress in \
          yadgarhq/deploy and the target's own ingress policy in yadgar before believing this \

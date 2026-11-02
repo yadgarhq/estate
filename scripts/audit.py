@@ -125,6 +125,7 @@ THRESHOLD = (4, 5)
 PROTO = "proto"
 ACTIONS = "actions"
 REPIN_PATH = ".github/workflows/repin.yaml"
+PRE_COMMIT_PATH = ".pre-commit-config.yaml"
 WORKFLOWS = ".github/workflows"
 RELEASE_APP_NAMES = ("RELEASE_APP_CLIENT_ID", "RELEASE_APP_PRIVATE_KEY")
 # `secrets.NAME` and `secrets['NAME']` / `secrets["NAME"]`; expression contexts
@@ -134,6 +135,12 @@ RELEASE_REF = re.compile(r"\bsecrets\s*(?:\.\s*(" + _NAMES + r")\b|\[\s*['\"](" 
                          re.IGNORECASE)
 GH_TIMEOUT = 60
 MAX_PAGES = 10
+# The `report` OUTPUT reaches the `route` job as one environment string, and
+# Linux refuses an execve whose single string exceeds MAX_ARG_STRLEN (131072
+# bytes, `REPORT=` and the NUL included). 64000 bytes is half that, so the
+# route step can never fail to exec on the report's size. Bytes, not
+# characters: the report carries three-byte em-dashes.
+REPORT_OUTPUT_MAX_BYTES = 64_000
 SEMVER = re.compile(r"v([0-9]{1,6})\.([0-9]{1,6})\.([0-9]{1,6})")
 
 
@@ -174,26 +181,61 @@ def lock_sources(text, owner):
     return sorted(out, key=lambda p: (p[0], p[1] or ""))
 
 
+class Unparsable(ValueError):
+    """One consumer file does not parse, or parses to the wrong shape.
+
+    `gather` records it against that repository and the predicates report it,
+    so one bad file is a finding rather than a crash of the whole sweep. The
+    message is `parse_error`'s, never `str(yaml_error)`: logs are public.
+    """
+
+
+def load_mapping(text):
+    """A YAML document that must be a mapping (an empty one reads as `{}`)."""
+    try:
+        doc = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise Unparsable(parse_error(exc)) from None
+    except (ValueError, TypeError, RecursionError) as exc:
+        # Valid YAML holding an invalid scalar, e.g. the timestamp `2026-13-45`.
+        # The class only: the message can quote the value.
+        raise Unparsable(type(exc).__name__) from None
+    if doc is None:
+        return {}
+    if not isinstance(doc, dict):
+        raise Unparsable(f"the document is a {type(doc).__name__}, not a mapping")
+    return doc
+
+
 def pre_commit(text, owner):
-    """`([actions revs], [hook ids])` of a .pre-commit-config.yaml.
+    """`([actions revs], [hook ids])` of a .pre-commit-config.yaml. Raises Unparsable.
 
     EVERY `yadgarhq/actions` block's rev, in file order: a second block is
     legal pre-commit, and keeping only one rev would let the other lag unseen.
     """
-    doc = yaml.safe_load(text) or {}
+    doc = load_mapping(text)
     revs, ids = [], set()
     actions_url = f"https://github.com/{owner}/{ACTIONS}"
-    for block in doc.get("repos", []):
+    blocks = doc.get("repos", [])
+    if not isinstance(blocks, list):
+        raise Unparsable("`repos` is not a list")
+    for block in blocks:
+        if not isinstance(block, dict):
+            raise Unparsable("a `repos` entry is not a mapping")
         if block.get("repo") == actions_url:
             revs.append(str(block.get("rev")))
-        ids.update(h["id"] for h in block.get("hooks", []))
+        hooks = block.get("hooks", [])
+        if not isinstance(hooks, list) or not all(isinstance(h, dict) and "id" in h for h in hooks):
+            raise Unparsable("a block's `hooks` is not a list of mappings with an `id`")
+        ids.update(str(h["id"]) for h in hooks)
     return revs, sorted(ids)
 
 
 def repin_callers(text):
-    """Every job's `uses:` in a workflow file, sorted."""
-    doc = yaml.safe_load(text) or {}
-    jobs = doc.get("jobs") or {}
+    """Every job's `uses:` in a workflow file, sorted. Raises Unparsable."""
+    jobs = load_mapping(text).get("jobs") or {}
+    if not isinstance(jobs, dict):
+        raise Unparsable("`jobs` is not a mapping")
     return sorted(str(j["uses"]) for j in jobs.values() if isinstance(j, dict) and "uses" in j)
 
 
@@ -293,6 +335,10 @@ def pin_parity(snap):
                 findings.append(finding("P1", repo["name"], f"`{producer}` has no released `vX.Y.Z` tag"))
             elif tag != want:
                 findings.append(finding("P1", repo["name"], f"`{producer}` pinned at `{tag}`, latest `{want}`"))
+        bad = (repo.get("unreadable") or {}).get(PRE_COMMIT_PATH)
+        if bad is not None:
+            findings.append(finding("P1", repo["name"], f"`{PRE_COMMIT_PATH}` does not parse, so its "
+                                                        f"`{ACTIONS}` pins are unknown: {bad}"))
         why = repin_gap(repo, snap["owner"])
         if why:
             findings.append(finding("P1", repo["name"], why))
@@ -303,6 +349,9 @@ def repin_gap(repo, owner):
     """Why a repository with an in-org git package lacks the repin caller, or None."""
     if not repo.get("lock_sources"):
         return None
+    bad = (repo.get("unreadable") or {}).get(REPIN_PATH)
+    if bad is not None:
+        return f"`{REPIN_PATH}` does not parse, so whether it calls the shared repin is unknown: {bad}"
     uses = repo.get("repin_uses")
     if uses is None:
         return f"pins in-org git crates but has no `{REPIN_PATH}`"
@@ -338,6 +387,11 @@ def hook_conformance(snap):
         cls, why = class_of(repo.get("topics") or [])
         if cls is None:
             findings.append(finding("P2", repo["name"], f"no class: {why}"))
+            continue
+        bad = (repo.get("unreadable") or {}).get(PRE_COMMIT_PATH)
+        if bad is not None:
+            # Not a member: an unknown hook set must not move the class threshold.
+            findings.append(finding("P2", repo["name"], f"`{PRE_COMMIT_PATH}` does not parse: {bad}"))
             continue
         if repo.get("hooks") is None:
             findings.append(finding("P2", repo["name"], "no `.pre-commit-config.yaml`"))
@@ -503,14 +557,24 @@ def gather(owner, get=gh_get):
         if not in_sweep(repo, snap["classes"]):
             continue
         base = f"repos/{owner}/{repo['name']}/contents"
-        cfg = get(f"{base}/.pre-commit-config.yaml", raw=True)
-        repo["actions_revs"], repo["hooks"] = pre_commit(cfg, owner) if cfg is not None else (None, None)
+        cfg = get(f"{base}/{PRE_COMMIT_PATH}", raw=True)
+        repo["actions_revs"], repo["hooks"] = None, None
+        if cfg is not None:
+            try:
+                repo["actions_revs"], repo["hooks"] = pre_commit(cfg, owner)
+            except Unparsable as exc:
+                repo.setdefault("unreadable", {})[PRE_COMMIT_PATH] = str(exc)
         repo["proto"] = proto_pin(get(f"{base}/PROTO_VERSION", raw=True))
         lock = get(f"{base}/Cargo.lock", raw=True)
         repo["lock_sources"] = lock_sources(lock, owner) if lock is not None else None
         if repo["lock_sources"]:
             caller = get(f"{base}/{REPIN_PATH}", raw=True)
-            repo["repin_uses"] = repin_callers(caller) if caller is not None else None
+            repo["repin_uses"] = None
+            if caller is not None:
+                try:
+                    repo["repin_uses"] = repin_callers(caller)
+                except Unparsable as exc:
+                    repo.setdefault("unreadable", {})[REPIN_PATH] = str(exc)
     producers = {p for r in snap["repos"] for p, _ in pins_of(r)}
     for producer in sorted(producers):
         tags = paged(get, f"repos/{owner}/{producer}/tags")
@@ -532,15 +596,16 @@ def swept_listing(owner, get):
 
 
 def parse_error(exc):
-    """A YAML error as its problem and position only.
+    """A YAML error as its class and position only, with no source text.
 
     Never `str(exc)`: PyYAML quotes the offending source line, which can name a
     secret that is not a release secret, and this reason reaches public logs.
+    Not `exc.problem` either: it quotes source tokens too, such as a tag name
+    (`'!SECRET_TAG'`) or an alias name (`'SECRETALIAS'`).
     """
-    problem = getattr(exc, "problem", None)
     mark = getattr(exc, "problem_mark", None)
     where = f" at line {mark.line + 1}, column {mark.column + 1}" if mark is not None else ""
-    return f"{problem or type(exc).__name__}{where}"
+    return f"{type(exc).__name__}{where}"
 
 
 def needs(owner, get=gh_get):
@@ -672,8 +737,19 @@ def main(argv):
         with open(args.summary, "a", encoding="utf-8") as fh:
             fh.write(text)
     if args.outputs:
-        write_outputs(args.outputs, {"verdict": "red" if code else "green", "report": text})
+        write_outputs(args.outputs, {"verdict": "red" if code else "green", "report": cut_for_env(text)})
     return code
+
+
+def cut_for_env(text, limit=REPORT_OUTPUT_MAX_BYTES):
+    """`text`, cut so its UTF-8 encoding is at most `limit` bytes, with a marker."""
+    raw = text.encode("utf-8")
+    if len(raw) <= limit:
+        return text
+    note = (f"\n\n(report cut at {limit} bytes for the route job's environment; "
+            "the run's step summary has all of it)\n")
+    keep = limit - len(note.encode("utf-8"))
+    return raw[:keep].decode("utf-8", errors="ignore") + note
 
 
 def write_outputs(path, values):
