@@ -127,6 +127,16 @@ refusal_status = 401
 # `task-db` and `project-db` two each, the three MariaDB Services and `valkey`
 # one each. `harness/src/reference.rs` refuses a `-db` named without its
 # `-mariadb`, which is the half of this gap a test can see.
+#
+# SIX TARGETS ADDED 2026-11-02 (ledger 1243, yaadgaar #362): `iam`, `task` and
+# `project` on 50052, `nats` on 4222, `nats-headless` on 8222 and `gateway` on
+# 8080. The list measured the databases and valkey but not the three logic
+# tiers, the broker or the gateway's in-cluster Service, which bypasses the
+# edge. `inventory` below is now the closed set the list is checked against.
+# The three logic tiers are headless with `replicaCount: 2`, so two addresses
+# each; `nats`, `nats-headless` (one broker pod) and `gateway` (a ClusterIP
+# Service) one each. THIRTEEN TARGETS ON NINETEEN ADDRESSES. Re-count if the
+# broker runs more than one pod: each extra pod adds one address and 3s.
 targets = [
   "iam-db.yadgar.svc.cluster.local:50051",
   "task-db.yadgar.svc.cluster.local:50051",
@@ -135,8 +145,71 @@ targets = [
   "task-db-mariadb.yadgar.svc.cluster.local:3306",
   "project-db-mariadb.yadgar.svc.cluster.local:3306",
   "valkey.yadgar.svc.cluster.local:6380",
+  "iam.yadgar.svc.cluster.local:50052",
+  "task.yadgar.svc.cluster.local:50052",
+  "project.yadgar.svc.cluster.local:50052",
+  "nats.yadgar.svc.cluster.local:4222",
+  "nats-headless.yadgar.svc.cluster.local:8222",
+  "gateway.yadgar.svc.cluster.local:8080",
 ]
 connect_timeout_ms = 3000
+
+# THE CLOSED SET C-18 IS CHECKED AGAINST (ledger 1243, yaadgaar #362). Every
+# Service:port in the `yadgar` namespace, as last read off the live cluster.
+# `harness/src/reference.rs` refuses a merge unless each entry is in `targets`
+# or in `excluded` with a reason, and unless every target and exclusion is in
+# this list. This list is DATA, not a test literal: a cluster service name in a
+# `.rs` file is the compiled-in dependency D80 refuses.
+#
+# WHAT THIS CHECK CANNOT SEE: a Service created after the measurement date. A
+# new Service is absent from this list until someone re-measures with
+# `kubectl -n yadgar get svc` and adds it, so re-measure on every new module or
+# broker and move the date.
+#
+# PROVENANCE. The names and ports are the 2026-10-17 read-only measurement in
+# ledger 1243's body, checked against each chart's own Service template on
+# 2026-11-02: `iam`, `task`, `project` render a headless Service on 50052,
+# `iam-db`, `task-db`, `project-db` a headless one on 50051, `gateway` a
+# ClusterIP Service on `service.port` 8080. That body records the three
+# `-mariadb-internal` Services by name only. Their 3306 is the mariadb-operator's
+# internal Service port and is NOT separately measured; it is excluded below, so
+# a wrong port there changes no dial.
+inventory_measured = "2026-10-17"
+inventory = [
+  "iam-db.yadgar.svc.cluster.local:50051",
+  "task-db.yadgar.svc.cluster.local:50051",
+  "project-db.yadgar.svc.cluster.local:50051",
+  "iam-db-mariadb.yadgar.svc.cluster.local:3306",
+  "task-db-mariadb.yadgar.svc.cluster.local:3306",
+  "project-db-mariadb.yadgar.svc.cluster.local:3306",
+  "iam-db-mariadb-internal.yadgar.svc.cluster.local:3306",
+  "task-db-mariadb-internal.yadgar.svc.cluster.local:3306",
+  "project-db-mariadb-internal.yadgar.svc.cluster.local:3306",
+  "valkey.yadgar.svc.cluster.local:6380",
+  "iam.yadgar.svc.cluster.local:50052",
+  "task.yadgar.svc.cluster.local:50052",
+  "project.yadgar.svc.cluster.local:50052",
+  "nats.yadgar.svc.cluster.local:4222",
+  "nats-headless.yadgar.svc.cluster.local:4222",
+  "nats-headless.yadgar.svc.cluster.local:8222",
+  "gateway.yadgar.svc.cluster.local:8080",
+]
+
+# EXCLUDED, AND THE RULE THAT DECIDES IT: an entry is excluded only when a
+# target already dials the SAME pods on the SAME port, so the same
+# NetworkPolicy rules decide both. A different port on the same pods is NOT a
+# duplicate, because an ingress policy is written per port. That is why
+# `nats-headless:8222` is a target: `nats-ingress` (platform chart) admits 4222
+# only from `app: iam` and `app: gateway`, but admits 8222, the unauthenticated
+# monitor, from the whole `yadgar` namespace. RE-CHECK this target and the word
+# "unauthenticated" when yaadgaar #169 residual 3 moves the NATS monitor to
+# TLS: the port or its listener can change.
+excluded = [
+  { target = "iam-db-mariadb-internal.yadgar.svc.cluster.local:3306", reason = "the headless twin of `iam-db-mariadb`: the same MariaDB pod on the same 3306, which that target already dials" },
+  { target = "task-db-mariadb-internal.yadgar.svc.cluster.local:3306", reason = "the headless twin of `task-db-mariadb`: the same MariaDB pod on the same 3306, which that target already dials" },
+  { target = "project-db-mariadb-internal.yadgar.svc.cluster.local:3306", reason = "the headless twin of `project-db-mariadb`: the same MariaDB pod on the same 3306, which that target already dials" },
+  { target = "nats-headless.yadgar.svc.cluster.local:4222", reason = "the headless twin of `nats`: the same broker pod on the same 4222, which `nats:4222` already dials" },
+]
 
 # THIS SAID "C-18 IS RED AT BIRTH AND THE RED CARRIES A DEADLINE. kindnet
 # enforces no NetworkPolicy (verified: the `kindnet` DaemonSet is the cluster's
@@ -174,7 +247,16 @@ connect_timeout_ms = 3000
 # all-dropped run takes about 30.0s, and one accepting address finishes the row
 # red at about 27s. The first smoke run after ledger 751 that REACHES the C-18
 # step is the first reading of the three added targets; until it is read, they
-# are declared and unobserved. Not every run reaches it: a run whose `verdict`
+# are declared and unobserved.
+#
+# AND THE 30.0s IS THE SEVEN-TARGET LIST'S NUMBER. With thirteen targets on
+# nineteen addresses (ledger 1243) an all-dropped run takes about 57.0s, and
+# one accepting address finishes the row red at about 54s. A run much quicker
+# than 57s means refusals, not drops: a closed port or a missing listener, the
+# vacuous pass this file warns about. Investigate it rather than read it as
+# green. The first run that reaches C-18 after ledger 1243 is the first reading
+# of the six added targets. If one of them ACCEPTS, that is a real finding: fix
+# the owning NetworkPolicy, never delete the target. Not every run reaches it: a run whose `verdict`
 # job decides `run=false` stops before C-18. (Before ledger 675 stage 7 retired
 # `await-roll`, a non-gateway roll stopped there too.)
 #
@@ -191,6 +273,14 @@ connect_timeout_ms = 3000
 # and `yadgarhq/docs`' `plans/chart-hardening.md` records it as exactly that.
 # For the other two MariaDB targets the first post-751 run that reaches the
 # C-18 step is the first reading.
+#
+# THE SIX LEDGER-1243 TARGETS are decided by `estate-front-egress`, not by the
+# targets' own ingress policies. Its rules admit only DNS (53), the edge's pods
+# on 10443, the pinned edge address on 443, and TCP 443 outside the cluster's
+# ranges (rule (d)). No egress rule admits 50052, 4222, 8222 or 8080, so the
+# connection is dropped whatever `gateway-ingress` or `nats-ingress` admits.
+# `nats-ingress` is the second layer only: it admits 4222 from `app: iam` and
+# `app: gateway`, and 8222 from the whole `yadgar` namespace.
 #
 # THERE WAS A DEADLINE HERE AND IT IS REMOVED, NOT RE-DATED (ADR-0687). This
 # file carried `deadline_task = "yadgarhq/docs ledger 614"`, `deadline_date =

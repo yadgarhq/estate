@@ -68,7 +68,10 @@ Stated here rather than left to be inferred.
   three separate days, reported C-18 `ok` in exactly `18.02s` — six sequential
   3000ms timeouts, which is the shape of a drop rather than of a missing policy.
   Those runs measured the four targets then declared; ledger 751 added three, so
-  an all-dropped run now takes about 30.0s on ten addresses.
+  an all-dropped run took about 30.0s on ten addresses. Ledger 1243 added six
+  more (`iam`, `task`, `project`, `nats` twice, `gateway`), so it now takes
+  about 57.0s on nineteen, and `reference.toml`'s `inventory` is the closed set
+  of `yadgar` Services every target and exclusion is checked against.
   The `test result: ok ... finished in 18.02s` line was read out of the logs of
   runs `33985246084` and `34875568456`, the oldest and the newest;
   `reference.toml` lists all nineteen ids. The dated task the row used to name,

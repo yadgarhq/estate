@@ -56,6 +56,96 @@ pub struct Login {
 pub struct Confinement {
     pub targets: Vec<String>,
     pub connect_timeout_ms: u64,
+    /// Every `Service:port` in the `yadgar` namespace, as last measured. C-18
+    /// either dials each one or names it in `excluded` with a reason. Required,
+    /// with no default: an absent inventory would make the closed-set check pass
+    /// over nothing.
+    pub inventory: Vec<String>,
+    /// The day `inventory` was read off the live cluster, `YYYY-MM-DD`.
+    pub inventory_measured: String,
+    /// Inventory entries C-18 deliberately does not dial, each with its reason.
+    pub excluded: Vec<Excluded>,
+}
+
+/// One inventory entry C-18 does not dial, and why.
+#[derive(Debug, Deserialize)]
+pub struct Excluded {
+    pub target: String,
+    pub reason: String,
+}
+
+/// Why `c` is not a closed set over its inventory, one line per defect.
+///
+/// Empty means closed: every inventory entry is a target or an exclusion,
+/// nothing is both, every target and exclusion is in the inventory, nothing is
+/// listed twice, and every exclusion says why. A function rather than inline
+/// test code so each defect class has its own red case (ADR-0645).
+pub fn confinement_gaps(c: &Confinement) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut gaps = Vec::new();
+    let inventory: BTreeSet<&str> = c.inventory.iter().map(String::as_str).collect();
+    let targets: BTreeSet<&str> = c.targets.iter().map(String::as_str).collect();
+    let excluded: BTreeSet<&str> = c.excluded.iter().map(|e| e.target.as_str()).collect();
+    if inventory.is_empty() {
+        gaps.push("the inventory is empty, so the closed-set check would pass over nothing".into());
+    }
+    if !is_iso_date(&c.inventory_measured) {
+        gaps.push(format!(
+            "inventory_measured `{}` is not a YYYY-MM-DD date",
+            c.inventory_measured
+        ));
+    }
+    for (what, list, set) in [
+        (
+            "inventory",
+            c.inventory.iter().collect::<Vec<_>>(),
+            &inventory,
+        ),
+        ("targets", c.targets.iter().collect(), &targets),
+        (
+            "excluded",
+            c.excluded.iter().map(|e| &e.target).collect(),
+            &excluded,
+        ),
+    ] {
+        if list.len() != set.len() {
+            gaps.push(format!("`{what}` names an entry more than once"));
+        }
+    }
+    for entry in &inventory {
+        if !targets.contains(entry) && !excluded.contains(entry) {
+            gaps.push(format!(
+                "`{entry}` is in the inventory but is neither a target nor excluded"
+            ));
+        }
+    }
+    for entry in targets.intersection(&excluded) {
+        gaps.push(format!("`{entry}` is both a target and excluded"));
+    }
+    for entry in targets.union(&excluded) {
+        if !inventory.contains(entry) {
+            gaps.push(format!(
+                "`{entry}` is not in the inventory measured {}; re-measure and add it",
+                c.inventory_measured
+            ));
+        }
+    }
+    for e in &c.excluded {
+        if e.reason.trim().is_empty() {
+            gaps.push(format!("`{}` is excluded with no reason", e.target));
+        }
+    }
+    gaps
+}
+
+fn is_iso_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 10
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
 }
 
 /// The repository root, derived from this crate's manifest directory.
@@ -202,6 +292,104 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Every `yadgar` Service:port is a C-18 target or an explicit exclusion.
+    ///
+    /// Ledger 1243 (yaadgaar #362): the list named the seven database and
+    /// valkey faces and none of `iam`, `task`, `project` :50052, `nats` :4222 or
+    /// `gateway` :8080, so the runner's reach to the three logic tiers, the
+    /// broker and the gateway's in-cluster Service was never measured. The
+    /// `-mariadb` pairing test above cannot see a tier missing on every face;
+    /// this one can, against the measured inventory in `reference.toml`.
+    #[test]
+    fn every_measured_service_is_a_confinement_target_or_excluded() {
+        let r = Reference::load().expect("reference.toml parses");
+        let gaps = confinement_gaps(&r.confinement);
+        assert!(
+            gaps.is_empty(),
+            "C-18 is not closed over the `yadgar` Services measured {}:\n{}",
+            r.confinement.inventory_measured,
+            gaps.join("\n")
+        );
+    }
+
+    /// Each defect class `confinement_gaps` refuses, as its own red case, plus
+    /// the pristine companion (ADR-0645, ADR-0646). The names are synthetic
+    /// (`a:1`, `b:2`), not cluster Services, so D80 has nothing to refuse.
+    #[test]
+    fn confinement_gaps_refuses_each_defect_and_passes_a_closed_set() {
+        fn c(targets: &[&str], inventory: &[&str], excluded: &[(&str, &str)]) -> Confinement {
+            Confinement {
+                targets: targets.iter().map(|s| s.to_string()).collect(),
+                connect_timeout_ms: 1,
+                inventory: inventory.iter().map(|s| s.to_string()).collect(),
+                inventory_measured: "2026-10-17".into(),
+                excluded: excluded
+                    .iter()
+                    .map(|(t, r)| Excluded {
+                        target: t.to_string(),
+                        reason: r.to_string(),
+                    })
+                    .collect(),
+            }
+        }
+        let has = |c: &Confinement, needle: &str| {
+            let g = confinement_gaps(c);
+            assert!(
+                g.iter().any(|l| l.contains(needle)),
+                "{needle:?} not in {g:?}"
+            );
+        };
+        // Pristine: one target, one exclusion, inventory is exactly the two.
+        assert_eq!(
+            confinement_gaps(&c(&["a:1"], &["a:1", "b:2"], &[("b:2", "same pod")])),
+            Vec::<String>::new()
+        );
+        // An inventory entry that is neither.
+        has(
+            &c(&["a:1"], &["a:1", "b:2"], &[]),
+            "`b:2` is in the inventory but is neither",
+        );
+        // Both a target and excluded.
+        has(
+            &c(&["a:1"], &["a:1"], &[("a:1", "x")]),
+            "`a:1` is both a target and excluded",
+        );
+        // A target the inventory does not know.
+        has(
+            &c(&["a:1", "z:9"], &["a:1"], &[]),
+            "`z:9` is not in the inventory",
+        );
+        // An exclusion the inventory does not know.
+        has(
+            &c(&["a:1"], &["a:1"], &[("z:9", "x")]),
+            "`z:9` is not in the inventory",
+        );
+        // An exclusion with no reason.
+        has(
+            &c(&["a:1"], &["a:1", "b:2"], &[("b:2", "  ")]),
+            "`b:2` is excluded with no reason",
+        );
+        // A duplicate in each list.
+        has(
+            &c(&["a:1", "a:1"], &["a:1"], &[]),
+            "`targets` names an entry more than once",
+        );
+        has(
+            &c(&["a:1"], &["a:1", "a:1"], &[]),
+            "`inventory` names an entry more than once",
+        );
+        has(
+            &c(&["a:1"], &["a:1", "b:2"], &[("b:2", "x"), ("b:2", "x")]),
+            "`excluded` names an entry more than once",
+        );
+        // An empty inventory, which would make the check vacuous.
+        has(&c(&[], &[], &[]), "the inventory is empty");
+        // A measurement date that is not a date.
+        let mut bad = c(&["a:1"], &["a:1"], &[]);
+        bad.inventory_measured = "recently".into();
+        has(&bad, "is not a YYYY-MM-DD date");
     }
 
     /// C-18's valkey target must name the port valkey actually serves.
