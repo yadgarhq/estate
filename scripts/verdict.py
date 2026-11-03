@@ -20,14 +20,16 @@ THREE OUTCOMES, kept apart on purpose:
     (401/403/404, never "waiting", or smoke goes silent when the token
     expires), an empty token, a consistency mismatch on argocd `main`, a
     verdict whose `A` matches but whose `K` does not, a malformed verdict,
-    estate's own token unable to list its `smoke-certified-` artifacts, or
-    C-18's inventory in `reference.toml` disagreeing with the Services the
-    table at argocd `main` renders (`check_inventory`, yaadgaar #538). That
-    last one is checked before any token is used, so drift is red whether or
-    not a verdict exists.
+    estate's own token unable to list its `smoke-certified-` artifacts, an
+    inventory input that cannot be read (before any token is used), or
+    C-18's inventory drift on any outcome that would run no rows.
   * a quiet `run=false` — no verdict for `E` yet, a red verdict, or `E`
     already certified. The job succeeds; the summary says which.
-  * `run=true` — a green verdict for `E` and no certificate for `E`.
+  * `run=true` — a green verdict for `E` and no certificate for `E`. With
+    C-18's inventory in `reference.toml` disagreeing with the Services the
+    table at argocd `main` renders (`inventory_problems`, yaadgaar #538 and
+    #549) it also outputs `inventory=drift`: the other rows run, and the C-18
+    step is red and writes no certificate (ruling, Max 2026-11-03).
 
 Tokens never reach stdout, an exception message, or a redirect target.
 """
@@ -114,6 +116,8 @@ class Decision:
     epoch: str
     summary: str
     verdict_url: str = ""
+    # `ok`, or `drift`: the rows run, and `smoke.yaml`'s C-18 step is red on it.
+    inventory: str = "ok"
 
 
 # ── the render key ──────────────────────────────────────────────────────────
@@ -208,6 +212,12 @@ def check_consistency(app_bytes: bytes, table_bytes: bytes, pin_bytes: bytes) ->
 # Services the mariadb-operator creates for it, `<name>` and `<name>-internal`.
 INVENTORY_OBJECTS = ("/Service/", "k8s.mariadb.com/MariaDB/")
 OPERATOR_SERVICES = {"Service": ("",), "MariaDB": ("", "-internal")}
+# A MariaDB spec key that makes mariadb-operator create MORE Services than
+# OPERATOR_SERVICES counts: `-primary` and `-secondary` (replication, galera)
+# and `-metrics` (metrics). yaadgaar #549: the inventory cannot name them, so
+# any of these is a refusal until someone measures and extends both.
+OPERATOR_EXTRA_KEYS = ("replication", "galera", "metrics")
+INVENTORY_DRIFT = "the C-18 inventory in reference.toml is not what argocd main renders"
 
 
 def _digest_lines(lines, where: str) -> dict[str, str]:
@@ -231,8 +241,77 @@ def _destination_namespace(app_bytes: bytes) -> str:
     return ns
 
 
+def _keys_under(node, wanted):
+    """Every key in `wanted` found anywhere in a parsed YAML tree, sorted."""
+    found = set()
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in wanted:
+                found.add(key)
+            found |= _keys_under(value, wanted)
+    elif isinstance(node, list):
+        for value in node:
+            found |= _keys_under(value, wanted)
+    return found
+
+
+def mariadb_extra_services(app_bytes: bytes) -> list[str]:
+    """Why a module's MariaDB CR may render Services OPERATOR_SERVICES omits.
+
+    Estate sees no rendered CR: the table is digests. So this reads where the
+    spec is SET, the Application's Helm values: `valuesObject` and `values`
+    under each module's `database`, and every `parameters` name. `valueFiles`
+    cannot be read from here at all, so it is a problem too. A chart release
+    that turns one of these on by DEFAULT shows only as a changed MariaDB
+    digest, which the pin comparison already refuses.
+    """
+    source = spec_source(app_bytes)
+    helm = source.get("helm") or {}
+    if not isinstance(helm, dict):
+        return ["spec.source.helm is not a mapping, so the MariaDB spec cannot be read"]
+    problems = []
+    trees = [("valuesObject", helm.get("valuesObject"))]
+    text = helm.get("values")
+    if text is not None:
+        try:
+            trees.append(("values", yaml.safe_load(text) if isinstance(text, str) else text))
+        except yaml.YAMLError:
+            problems.append("spec.source.helm.values does not parse, so the MariaDB spec cannot be read")
+    for where, tree in trees:
+        for module, body in (tree or {}).items() if isinstance(tree, dict) else ():
+            db = body.get("database") if isinstance(body, dict) else None
+            for key in sorted(_keys_under(db, OPERATOR_EXTRA_KEYS)):
+                problems.append(
+                    f"`{module}.database` sets `{key}` in spec.source.helm.{where}: mariadb-operator then "
+                    "creates `-primary`/`-secondary`/`-metrics` Services the inventory does not count"
+                )
+    for param in helm.get("parameters") or []:
+        name = str(param.get("name", "")) if isinstance(param, dict) else str(param)
+        parts = name.split(".")
+        if "database" in parts and set(parts[parts.index("database"):]) & set(OPERATOR_EXTRA_KEYS):
+            problems.append(f"Helm parameter `{name}` sets a MariaDB spec key that adds operator Services")
+    if helm.get("valueFiles"):
+        problems.append("spec.source.helm carries `valueFiles`, which estate cannot read, so the MariaDB spec is unknown")
+    return problems
+
+
 def check_inventory(table_bytes: bytes, app_bytes: bytes, reference_bytes: bytes) -> None:
-    """Refuse unless C-18's inventory is the set of Services argocd main renders.
+    """Refuse when `inventory_problems` names any: drift is a Red here."""
+    problems = inventory_problems(table_bytes, app_bytes, reference_bytes)
+    if problems:
+        raise Red(drift_message(problems))
+
+
+def drift_message(problems: list[str]) -> str:
+    return (
+        f"{INVENTORY_DRIFT}; re-measure "
+        "(`kubectl -n yadgar get svc`), correct `inventory` and the targets, and re-pin "
+        "`rendered`: " + "; ".join(problems)
+    )
+
+
+def inventory_problems(table_bytes: bytes, app_bytes: bytes, reference_bytes: bytes) -> list[str]:
+    """Every way C-18's inventory differs from the Services argocd main renders.
 
     Two comparisons, each both ways. (1) Every Service and MariaDB CR line of
     the render table equals, digest and all, a line in `[confinement] rendered`:
@@ -240,6 +319,12 @@ def check_inventory(table_bytes: bytes, app_bytes: bytes, reference_bytes: bytes
     moved on a Service whose name did not. (2) The host names derived from the
     render equal the host names in `[confinement] inventory`. A re-measure
     re-pastes the lines and corrects the inventory; nothing else clears it.
+    (3) No module's MariaDB values make the operator create Services those two
+    comparisons cannot see (`mariadb_extra_services`, yaadgaar #549).
+
+    The DIFFERENCES are returned, because drift reds only C-18 (ruling, Max
+    2026-11-03). Input that cannot be read at all, a malformed
+    `reference.toml` or table line or no destination namespace, is still a Red.
     """
     try:
         conf = tomllib.loads(reference_bytes.decode("utf-8")).get("confinement") or {}
@@ -286,12 +371,7 @@ def check_inventory(table_bytes: bytes, app_bytes: bytes, reference_bytes: bytes
     problems += [
         f"the inventory names `{h}` but argocd main renders no such Service" for h in sorted(declared_hosts - rendered_hosts)
     ]
-    if problems:
-        raise Red(
-            "the C-18 inventory in reference.toml is not what argocd main renders; re-measure "
-            "(`kubectl -n yadgar get svc`), correct `inventory` and the targets, and re-pin "
-            "`rendered`: " + "; ".join(problems)
-        )
+    return problems + mariadb_extra_services(app_bytes)
 
 
 # ── GitHub ──────────────────────────────────────────────────────────────────
@@ -598,7 +678,27 @@ def decide(public: GitHub, verify: GitHub, estate: GitHub, inp: Inputs) -> Decis
     head = public.json(f"/repos/{ARGOCD}/branches/main")["commit"]["sha"]
     now = {p: contents(public, p, head) for p in (TABLE_PATH, APP_PATH, PIN_PATH)}
     pin = check_consistency(now[APP_PATH], now[TABLE_PATH], now[PIN_PATH])
-    check_inventory(now[TABLE_PATH], now[APP_PATH], inp.reference if inp.reference is not None else REFERENCE_PATH.read_bytes())
+    drift = inventory_problems(
+        now[TABLE_PATH], now[APP_PATH], inp.reference if inp.reference is not None else REFERENCE_PATH.read_bytes()
+    )
+    try:
+        d = _decide_rows(public, verify, estate, inp, head, now, pin)
+    except Red as err:
+        if drift:
+            raise Red(f"{err}; and {drift_message(drift)}") from None
+        raise
+    if not drift:
+        return d
+    # yaadgaar #549, ruling (b): drift reds C-18 only. It rides on a run that
+    # reaches the rows; on any outcome that runs no rows it stays a whole-job
+    # red, or it would read as a quiet `run=false`.
+    if not d.run:
+        raise Red(f"{drift_message(drift)} (and no rows run: {d.summary})")
+    return Decision(True, d.epoch, f"{d.summary}. C-18 IS RED: {drift_message(drift)}", d.verdict_url, "drift")
+
+
+def _decide_rows(public: GitHub, verify: GitHub, estate: GitHub, inp: Inputs, head: str,
+                 now: dict[str, bytes], pin: str) -> Decision:
     key = render_key(now[TABLE_PATH], now[APP_PATH])
     anchor, anchored_at, merged = find_anchor(public, head, now, key)
     epoch = f"{key}-{anchor}"
@@ -665,10 +765,10 @@ def choose_token(probe: str, env: dict) -> str:
     return env.get("VERDICT_TOKEN", "")
 
 
-def _emit(env: dict, run: bool, epoch: str, url: str, summary: str) -> None:
+def _emit(env: dict, run: bool, epoch: str, url: str, summary: str, inventory: str = "") -> None:
     if env.get("GITHUB_OUTPUT"):
         with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-            f.write(f"run={'true' if run else 'false'}\nepoch={epoch}\nverdict_url={url}\n")
+            f.write(f"run={'true' if run else 'false'}\nepoch={epoch}\nverdict_url={url}\ninventory={inventory}\n")
     if env.get("GITHUB_STEP_SUMMARY"):
         with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
             f.write(f"### settled-state verdict\n\n{summary}\n")
@@ -697,7 +797,10 @@ def main(env: dict | None = None, transport: Transport = http_transport) -> int:
         _emit(env, False, "", "", f"**REFUSED** — {msg}")
         return 1
     print(d.summary)
-    _emit(env, d.run, d.epoch, d.verdict_url, d.summary + (f"\n\nVerdict run: {d.verdict_url}" if d.verdict_url else ""))
+    if d.inventory != "ok":
+        print("::error title=C-18 inventory drift::the rows run; the C-18 step is red on this drift")
+    _emit(env, d.run, d.epoch, d.verdict_url,
+          d.summary + (f"\n\nVerdict run: {d.verdict_url}" if d.verdict_url else ""), d.inventory)
     return 0
 
 

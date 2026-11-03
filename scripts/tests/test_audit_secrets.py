@@ -116,6 +116,30 @@ def test_needs_records_a_workflow_that_does_not_parse_and_reads_on():
     assert len(unreadable["plain"]) == 1 and unreadable["plain"][0].startswith(".github/workflows/ci.yaml: ")
 
 
+# yaadgaar #540: valid YAML can still fail to read. `2026-13-45` is a timestamp
+# PyYAML refuses with ValueError, and a self-referencing alias parses into a
+# cycle that `strings()` recurses on. Each is a finding against that one file,
+# named by its exception class only (logs are public), and the next repository
+# is still read: never a crashed `needs` job.
+@pytest.mark.parametrize("text, why", [
+    ("on: push\nwhen: 2026-13-45\njobs: {}\n", "ValueError"),
+    ("jobs:\n  a: &x\n    - *x\n", "RecursionError"),
+])
+def test_needs_records_a_workflow_with_an_invalid_value_as_unreadable_and_reads_on(text, why):
+    world = needs_world()
+    world["repos/o/plain/contents/.github/workflows/ci.yaml"] = text
+    found, unreadable = audit.needs("o", lambda path, raw=False: world[path])
+    assert found == {"task": BOTH}  # `task` sorts after `plain`: it was still read
+    assert unreadable == {"plain": [f".github/workflows/ci.yaml: {why}"]}
+
+
+def test_needs_never_quotes_an_invalid_value():
+    world = needs_world()
+    world["repos/o/plain/contents/.github/workflows/ci.yaml"] = "on: push\nSECRETVALUE: 2026-13-45\n"
+    _, unreadable = audit.needs("o", lambda path, raw=False: world[path])
+    assert "SECRETVALUE" not in json.dumps(unreadable) and "2026-13-45" not in json.dumps(unreadable)
+
+
 def test_p3_an_unparsable_workflow_is_a_finding_naming_repo_and_file():
     d = doc({"a": BOTH}, {"a": {"org": BOTH, "repo": []}})
     d["unreadable"] = {"plain": [".github/workflows/ci.yaml: while parsing"]}

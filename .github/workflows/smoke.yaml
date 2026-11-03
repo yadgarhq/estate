@@ -126,6 +126,11 @@ jobs:
       run: ${{ steps.decide.outputs.run }}
       epoch: ${{ steps.decide.outputs.epoch }}
       verdict_url: ${{ steps.decide.outputs.verdict_url }}
+      # `ok`, or `drift` when C-18's inventory disagrees with argocd main's render
+      # (yaadgaar #549, ruling (b), Max 2026-11-03). Drift reds the C-18 step
+      # only; the front-door rows still run. `verdict.py` answers `run=true` with
+      # drift only; on any outcome that runs no rows, drift fails this job.
+      inventory: ${{ steps.decide.outputs.inventory }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -251,9 +256,24 @@ jobs:
       # and the step would finish early — about 54s rather than 57.0s for the
       # thirteen-target list (about 27s rather than 30.0s for the seven-target
       # list, about fifteen rather than 18.02s for the old four).
+      #
+      # INVENTORY DRIFT REDS THIS STEP, AND ONLY THIS STEP (yaadgaar #549, ruling
+      # (b), Max 2026-11-03). When `reference.toml`'s inventory is not what argocd
+      # main renders, the targets this step dials are not the cluster's Services,
+      # so a green here would measure the wrong list. The step fails without
+      # dialling; the front-door rows above have already run. Anything but `ok`
+      # is red, so an output that went missing cannot pass.
       - name: C-18 confinement — nothing inside the cluster is reachable
         id: confinement
-        run: cargo test --locked --test confinement -- --ignored --nocapture
+        env:
+          INVENTORY: ${{ needs.verdict.outputs.inventory }}
+        run: |
+          set -euo pipefail
+          if [ "$INVENTORY" != ok ]; then
+            echo "::error title=C-18 inventory drift::the C-18 inventory is '${INVENTORY:-missing}', not 'ok'; the verdict job's summary names the drift. Re-measure and re-pin reference.toml."
+            exit 1
+          fi
+          cargo test --locked --test confinement -- --ignored --nocapture
 
       # `if: always()` IS WHAT `continue-on-error` USED TO DO FOR THIS STEP. With the
       # excuse dropped, a failing C-18 aborts the job — and without this condition the
@@ -264,6 +284,7 @@ jobs:
         if: always()
         env:
           OUTCOME: ${{ steps.confinement.outcome }}
+          INVENTORY: ${{ needs.verdict.outputs.inventory }}
         run: |
           set -euo pipefail
           {
@@ -271,6 +292,13 @@ jobs:
             echo ""
             echo "Outcome: \`$OUTCOME\`."
             echo ""
+            if [ "$INVENTORY" != ok ] && [ "$OUTCOME" = failure ]; then
+              echo "C-18 is RED ON INVENTORY DRIFT and dialled nothing: reference.toml's"
+              echo "inventory is not what argocd main renders (the verdict job's summary"
+              echo "names how). The other rows ran. No certificate is written, so the next"
+              echo "poll runs them again until the inventory is re-measured and re-pinned."
+              exit 0
+            fi
             if [ "$OUTCOME" = skipped ] || [ "$OUTCOME" = cancelled ]; then
               echo "C-18 did NOT run: an earlier step failed or the run was cancelled — the"
               echo "checkout or toolchain, the front-door contracts, or the 30-minute"
@@ -292,8 +320,12 @@ jobs:
       # red therefore blocks automatic re-runs for that epoch until someone
       # dispatches with `recertify`. `!cancelled()` rather than `always()`: a
       # cancelled run certified nothing, and must not block the next poll.
+      #
+      # NO CERTIFICATE ON INVENTORY DRIFT (yaadgaar #549). A drift run is red on
+      # C-18 by construction; certifying it would make every later poll read the
+      # epoch as "already certified", a quiet `run=false`, while the drift stands.
       - name: write the certificate
-        if: "!cancelled()"
+        if: "!cancelled() && needs.verdict.outputs.inventory == 'ok'"
         env:
           EPOCH: ${{ needs.verdict.outputs.epoch }}
           VERDICT_URL: ${{ needs.verdict.outputs.verdict_url }}
@@ -303,7 +335,7 @@ jobs:
           printf 'epoch %s\nverdict %s\nconclusion %s\n' "$EPOCH" "$VERDICT_URL" "$CONCLUSION" > "$RUNNER_TEMP/smoke-certified.txt"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: "!cancelled()"
+        if: "!cancelled() && needs.verdict.outputs.inventory == 'ok'"
         with:
           name: smoke-certified-${{ needs.verdict.outputs.epoch }}
           path: ${{ runner.temp }}/smoke-certified.txt

@@ -253,6 +253,52 @@ def test_p2_no_class_and_no_config_fail():
     ]
 
 
+# yaadgaar #540, ruled 2026-11-03: an `estate-class-*` topic beside
+# `yadgar-deployable` is a red finding against THAT repository. The explicit
+# class still stands, so the repository stays a member and its own hook
+# findings, and its class's 80% threshold, are judged exactly as before.
+
+
+@pytest.mark.parametrize("explicit", ["estate-class-infra", "estate-class-deployable", "estate-class-crate"])
+def test_p2_an_estate_class_topic_beside_yadgar_deployable_is_a_finding_against_that_repo(explicit):
+    snap = pristine()
+    by_name(snap, "store")["topics"] = [explicit, "yadgar-deployable"]
+    findings, classes = audit.hook_conformance(snap)
+    cls = explicit[len("estate-class-"):]
+    assert ("store", f"`{explicit}` and `yadgar-deployable` both name a class; keep one") in whats(findings)
+    assert "store" in classes[cls]["members"]
+    assert all(f["repo"] != "(estate)" for f in findings)
+    text, code = audit.report(snap)
+    assert code == 1 and "- P2 `store`: `" + explicit in text
+
+
+def test_p2_the_conflicting_repo_keeps_its_own_hook_findings_and_its_class_threshold():
+    snap = pristine()
+    # seeder: an explicit deployable class beside yadgar-deployable, and missing a required hook.
+    by_name(snap, "seeder").update(topics=["estate-class-deployable", "yadgar-deployable"],
+                                   hooks=["cargo-fmt", "gitleaks"])
+    for extra in ("w", "x", "y"):  # six members: 5/6 carry boot-reads-watched
+        snap["repos"].append(repo(extra, ["yadgar-deployable"], RUST))
+    findings, classes = audit.hook_conformance(snap)
+    assert classes["deployable"]["members"] == ["gateway", "iam", "seeder", "w", "x", "y"]
+    assert classes["deployable"]["required"]["boot-reads-watched"] == 5
+    assert whats(findings) == [
+        ("seeder", "`estate-class-deployable` and `yadgar-deployable` both name a class; keep one"),
+        ("seeder", "deployable: missing required `boot-reads-watched`"),
+    ]
+
+
+@pytest.mark.parametrize("topics", [
+    ["estate-class-infra", "yadgar-class-base"],
+    ["estate-class-infra", "yadgar-class-rust-app"],
+    ["yadgar-class-service", "yadgar-deployable"],
+])
+def test_p2_no_conflict_without_both_topics(topics):
+    snap = pristine()
+    by_name(snap, "estate")["topics"] = topics
+    assert not [f for f in audit.hook_conformance(snap)[0] if "both name a class" in f["what"]]
+
+
 # --------------------------------------------------------------------------
 # the report, and the real estate as recorded
 # --------------------------------------------------------------------------
