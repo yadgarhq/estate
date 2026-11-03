@@ -52,6 +52,9 @@ The class of a repository is derived from GitHub topics, in this order
   2. otherwise the `yadgar-deployable` topic makes it `deployable`;
   3. otherwise its ONE `yadgar-class-<name>` topic is mapped through CLASS_MAP,
      the legacy fallback. Zero or several is a finding.
+An `estate-class-*` topic beside `yadgar-deployable` is a P2 finding against
+that repository (ruling, Max 2026-11-03), even when the two agree; the explicit
+topic still decides the class, so the repository's other findings stand.
 The topics are mutable by any repository admin; the auditor only reads them.
 
 ENUMERATION matches `yadgarhq/actions` `scripts/sweep.py`: public repositories
@@ -252,7 +255,12 @@ def strings(node):
 
 
 def release_needs(text, owner):
-    """The release App secret names one workflow file uses, sorted. Raises yaml.YAMLError."""
+    """The release App secret names one workflow file uses, sorted.
+
+    Raises yaml.YAMLError, and ValueError, TypeError or RecursionError on valid
+    YAML that cannot be read (a timestamp `2026-13-45`, a self-referencing
+    alias); `needs` records each against the one file.
+    """
     doc = yaml.safe_load(text) or {}
     found = {(dot or index).upper() for s in strings(doc) for dot, index in RELEASE_REF.findall(s)}
     jobs = doc.get("jobs") if isinstance(doc, dict) else None
@@ -296,6 +304,20 @@ def class_of(topics):
     if found[0] not in CLASS_MAP:
         return None, f"`{CLASS_PREFIX}{found[0]}` maps to no class"
     return CLASS_MAP[found[0]], None
+
+
+def topic_conflict(topics):
+    """Why an `estate-class-*` topic beside `yadgar-deployable` is a finding, or None.
+
+    yaadgaar #540 (ruling, Max 2026-11-03): two topics that each name a class
+    are a red finding against that repository, even when they agree. The
+    explicit topic still decides the class (`class_of`), so the repository
+    stays a member and nothing else it is judged on moves.
+    """
+    explicit = sorted(t for t in topics if t.startswith(EXPLICIT_PREFIX))
+    if explicit and DEPLOYABLE_TOPIC in topics:
+        return f"`{explicit[0]}` and `{DEPLOYABLE_TOPIC}` both name a class; keep one"
+    return None
 
 
 def finding(predicate, repo, what):
@@ -388,6 +410,9 @@ def hook_conformance(snap):
         if cls is None:
             findings.append(finding("P2", repo["name"], f"no class: {why}"))
             continue
+        conflict = topic_conflict(repo.get("topics") or [])
+        if conflict:
+            findings.append(finding("P2", repo["name"], conflict))
         bad = (repo.get("unreadable") or {}).get(PRE_COMMIT_PATH)
         if bad is not None:
             # Not a member: an unknown hook set must not move the class threshold.
@@ -634,6 +659,9 @@ def needs(owner, get=gh_get):
             except yaml.YAMLError as exc:
                 why = parse_error(exc)
                 unreadable.setdefault(name, []).append(f"{f['path']}: {why}")
+            except (ValueError, TypeError, RecursionError) as exc:
+                # As in `load_mapping`: the class only, the message can quote the value.
+                unreadable.setdefault(name, []).append(f"{f['path']}: {type(exc).__name__}")
         if used:
             found[name] = sorted(used)
     return found, unreadable

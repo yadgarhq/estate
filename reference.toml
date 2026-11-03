@@ -169,8 +169,13 @@ connect_timeout_ms = 3000
 # two operator Services `<name>` and `<name>-internal`. The table carries no
 # ports, so `rendered` below pins the table's line, digest and all, for every
 # Service and MariaDB CR: a port that moves changes its object's digest, and
-# the job goes red until someone re-measures, corrects this list and the
-# targets, re-pastes the lines and moves the date.
+# C-18 goes red until someone re-measures, corrects this list and the
+# targets, re-pastes the lines and moves the date. A MariaDB CR whose Helm
+# values set `replication`, `galera` or `metrics` is red too: the operator then
+# creates `-primary`/`-secondary`/`-metrics` Services this count omits
+# (yaadgaar #549). Ruled 2026-11-03: drift reds the C-18 step only, and the
+# other rows still run; on a poll that runs no rows it fails the whole
+# `verdict` job, as before.
 #
 # WHAT IT STILL CANNOT SEE: a Service in `yadgar` that the `yadgar` Application
 # does not render — one another Application or an operator other than

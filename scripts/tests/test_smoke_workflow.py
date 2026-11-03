@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import copy
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -170,11 +172,70 @@ def test_the_certificate_is_uploaded_on_every_verdict_driven_run_pass_or_fail():
     upload = next(s for s in JOBS["smoke"]["steps"] if s.get("uses", "").startswith("actions/upload-artifact@"))
     write = next(s for s in JOBS["smoke"]["steps"] if s.get("name") == "write the certificate")
     assert upload["with"]["name"] == "smoke-certified-${{ needs.verdict.outputs.epoch }}"
+    ok = {"needs.verdict.outputs.inventory": "ok"}
     for step in (write, upload):
-        assert evaluate(step["if"], {"github.event_name": "schedule"})
-        assert evaluate(step["if"], {"github.event_name": "workflow_dispatch"})
+        assert evaluate(step["if"], {"github.event_name": "schedule", **ok})
+        assert evaluate(step["if"], {"github.event_name": "workflow_dispatch", **ok})
         # a cancelled run certified nothing and must not block the next poll
-        assert not evaluate(step["if"], {"github.event_name": "schedule", "cancelled()": True})
+        assert not evaluate(step["if"], {"github.event_name": "schedule", "cancelled()": True, **ok})
+
+
+# yaadgaar #549, ruled 2026-11-03 (option b): inventory drift reds the C-18 rows
+# only. These read the workflow's STRUCTURE (conditions, env, the step's own
+# shell); no test here runs GitHub Actions.
+
+
+@pytest.mark.parametrize("inventory", ["drift", "", "unknown"])
+def test_no_certificate_while_the_inventory_is_not_ok(inventory):
+    """A drift run certifies nothing, so the next poll asks again and C-18 stays
+    red every poll until the re-pin, as the whole-job red did before."""
+    for step in JOBS["smoke"]["steps"]:
+        if step.get("name") == "write the certificate" or step.get("uses", "").startswith("actions/upload-artifact@"):
+            assert not evaluate(step["if"], {"github.event_name": "schedule",
+                                             "needs.verdict.outputs.inventory": inventory})
+
+
+def test_the_verdict_job_hands_the_inventory_state_on():
+    assert JOBS["verdict"]["outputs"]["inventory"] == "${{ steps.decide.outputs.inventory }}"
+
+
+def c18_step():
+    return next(s for s in JOBS["smoke"]["steps"] if s.get("id") == "confinement")
+
+
+def run_c18(tmp_path, inventory):
+    """Run the C-18 step's own shell with a fake `cargo` that records its call."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "cargo.log"
+    cargo = bin_dir / "cargo"
+    cargo.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n')
+    cargo.chmod(0o755)
+    # Only the fake on PATH: the step's shell needs nothing but builtins and `cargo`.
+    env = {"PATH": str(bin_dir), "INVENTORY": inventory}
+    assert c18_step()["env"]["INVENTORY"] == "${{ needs.verdict.outputs.inventory }}"
+    bash = shutil.which("bash")
+    assert bash, "the test needs bash, as the runner's `run:` shell is"
+    done = subprocess.run([bash, "-c", c18_step()["run"]], env=env, capture_output=True, text=True)
+    return done.returncode, log.read_text() if log.exists() else "", done.stdout
+
+
+def test_the_c18_step_runs_the_confinement_rows_on_a_clean_inventory(tmp_path):
+    code, cargo, _ = run_c18(tmp_path, "ok")
+    assert code == 0
+    assert cargo.strip() == "test --locked --test confinement -- --ignored --nocapture"
+
+
+@pytest.mark.parametrize("inventory", ["drift", "", "OK"])
+def test_the_c18_step_is_red_on_anything_but_a_clean_inventory(tmp_path, inventory):
+    code, cargo, out = run_c18(tmp_path, inventory)
+    assert code == 1 and cargo == ""
+    assert "::error" in out and "C-18 inventory" in out
+
+
+def test_drift_does_not_stop_the_front_door_rows():
+    front = next(s for s in JOBS["smoke"]["steps"] if s.get("name") == "the front-door contracts")
+    assert "if" not in front and "inventory" not in str(front)
 
 
 def test_the_verdict_job_is_confined():
@@ -182,7 +243,7 @@ def test_the_verdict_job_is_confined():
     assert job["runs-on"] == "ubuntu-latest"
     assert job["environment"] == "verdict-reader"
     assert job["permissions"] == {"contents": "read", "actions": "read"}
-    assert set(job["outputs"]) == {"run", "epoch", "verdict_url"}
+    assert set(job["outputs"]) == {"run", "epoch", "verdict_url", "inventory"}
     assert "secrets" not in str(job["outputs"])
     decide = next(s for s in job["steps"] if s.get("id") == "decide")
     assert decide["run"] == "python3 scripts/verdict.py"
