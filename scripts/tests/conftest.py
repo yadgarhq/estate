@@ -176,12 +176,31 @@ class FakeGitHub:
         return self.routes[url]
 
 
-def run(gh: FakeGitHub, *, verify_token=VERIFY_TOKEN, recertify=False, now=NOW) -> verdict.Decision:
+def d41_reference() -> bytes:
+    """`reference.toml`'s real inventory with d41c07f's render lines pinned.
+
+    The world below is argocd at d41c07f, where the frozen key vectors live;
+    `reference.toml` pins a later argocd main, whose nats and valkey Services
+    differ. Only `rendered` is swapped: the inventory is the committed one.
+    """
+    table = (FIXTURES / SHA_D41 / "yadgar_render.sha256").read_text()
+    lines = [ln for ln in table.splitlines() if "/Service//" in ln or "/MariaDB//" in ln]
+    inventory = verdict.tomllib.loads(verdict.REFERENCE_PATH.read_text())["confinement"]["inventory"]
+    return f"[confinement]\ninventory = {json.dumps(inventory)}\nrendered = {json.dumps(lines)}\n".encode()
+
+
+_D41_REFERENCE = object()
+
+
+def run(gh: FakeGitHub, *, verify_token=VERIFY_TOKEN, recertify=False, now=NOW,
+        reference=_D41_REFERENCE) -> verdict.Decision:
+    """`reference=None` reads the committed `reference.toml`, as the job does."""
     return verdict.decide(
         verdict.GitHub(gh, OWN_TOKEN, "argocd (public)"),
         verdict.GitHub(gh, verify_token, "argocd-verify"),
         verdict.GitHub(gh, OWN_TOKEN, "estate's own artifact listing"),
-        verdict.Inputs("yadgarhq/estate", ESTATE_ID, "main", recertify, now),
+        verdict.Inputs("yadgarhq/estate", ESTATE_ID, "main", recertify, now,
+                       d41_reference() if reference is _D41_REFERENCE else reference),
     )
 
 

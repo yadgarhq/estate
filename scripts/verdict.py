@@ -19,8 +19,12 @@ THREE OUTCOMES, kept apart on purpose:
   * `Red` — the job FAILS and `run=false`: a token argocd-verify rejects
     (401/403/404, never "waiting", or smoke goes silent when the token
     expires), an empty token, a consistency mismatch on argocd `main`, a
-    verdict whose `A` matches but whose `K` does not, a malformed verdict, or
-    estate's own token unable to list its `smoke-certified-` artifacts.
+    verdict whose `A` matches but whose `K` does not, a malformed verdict,
+    estate's own token unable to list its `smoke-certified-` artifacts, or
+    C-18's inventory in `reference.toml` disagreeing with the Services the
+    table at argocd `main` renders (`check_inventory`, yaadgaar #538). That
+    last one is checked before any token is used, so drift is red whether or
+    not a verdict exists.
   * a quiet `run=false` — no verdict for `E` yet, a red verdict, or `E`
     already certified. The job succeeds; the summary says which.
   * `run=true` — a green verdict for `E` and no certificate for `E`.
@@ -36,12 +40,14 @@ import json
 import os
 import re
 import sys
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Callable
 
 import yaml
@@ -52,6 +58,7 @@ VERIFY = "yadgarhq/argocd-verify"
 TABLE_PATH = "scripts/gates/yadgar_render.sha256"
 APP_PATH = "applications/yadgar.yaml"
 PIN_PATH = "scripts/chart_pin.json"
+REFERENCE_PATH = Path(__file__).resolve().parents[1] / "reference.toml"
 ALLOWED_REPO_URL = "ghcr.io/yadgarhq/charts"
 ALLOWED_CHART = "yadgar"
 FORBIDDEN_SOURCE_KEYS = ("path", "kustomize", "plugin")
@@ -192,6 +199,99 @@ def check_consistency(app_bytes: bytes, table_bytes: bytes, pin_bytes: bytes) ->
     if tag != f"v{pin}":
         raise Red(f"{PIN_PATH} chart_tag is {tag!r}, but the pin is {pin!r} (want 'v{pin}')")
     return pin
+
+
+# ── C-18's inventory against the render (yaadgaar #538) ────────────────────
+
+# The render-table objects whose names and ports make up the `yadgar`
+# namespace's Services: a Service directly, and a MariaDB CR through the two
+# Services the mariadb-operator creates for it, `<name>` and `<name>-internal`.
+INVENTORY_OBJECTS = ("/Service/", "k8s.mariadb.com/MariaDB/")
+OPERATOR_SERVICES = {"Service": ("",), "MariaDB": ("", "-internal")}
+
+
+def _digest_lines(lines, where: str) -> dict[str, str]:
+    """`{object: digest}` from `<sha256>  <object>` lines. A repeat is a refusal."""
+    out: dict[str, str] = {}
+    for line in lines:
+        digest, _, key = line.partition("  ")
+        if not HEX64.match(digest) or not key:
+            raise Red(f"{where}: `{line}` is not `<sha256>  <object>`")
+        if key in out:
+            raise Red(f"{where}: `{key}` listed twice")
+        out[key] = digest
+    return out
+
+
+def _destination_namespace(app_bytes: bytes) -> str:
+    doc = yaml.safe_load(app_bytes)
+    ns = (((doc or {}).get("spec") or {}).get("destination") or {}).get("namespace") if isinstance(doc, dict) else None
+    if not isinstance(ns, str) or not ns:
+        raise Red(f"{APP_PATH} has no spec.destination.namespace, so its Services have no host name")
+    return ns
+
+
+def check_inventory(table_bytes: bytes, app_bytes: bytes, reference_bytes: bytes) -> None:
+    """Refuse unless C-18's inventory is the set of Services argocd main renders.
+
+    Two comparisons, each both ways. (1) Every Service and MariaDB CR line of
+    the render table equals, digest and all, a line in `[confinement] rendered`:
+    the table carries no ports, so a pinned digest is what catches a port that
+    moved on a Service whose name did not. (2) The host names derived from the
+    render equal the host names in `[confinement] inventory`. A re-measure
+    re-pastes the lines and corrects the inventory; nothing else clears it.
+    """
+    try:
+        conf = tomllib.loads(reference_bytes.decode("utf-8")).get("confinement") or {}
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as err:
+        raise Red(f"reference.toml does not parse: {err}") from None
+    inventory, pinned_lines = conf.get("inventory"), conf.get("rendered")
+    for name, value in (("inventory", inventory), ("rendered", pinned_lines)):
+        if not isinstance(value, list) or not value or not all(isinstance(v, str) for v in value):
+            raise Red(f"reference.toml [confinement] {name} is absent, empty or not a list of strings")
+    namespace = _destination_namespace(app_bytes)
+    table_lines = [
+        ln for ln in table_bytes.decode("utf-8", "replace").splitlines()
+        if ln.strip() and not ln.startswith("#") and not ln.startswith("targetRevision")
+    ]
+    live = {
+        k: d for k, d in _digest_lines(table_lines, TABLE_PATH).items() if k.startswith(INVENTORY_OBJECTS)
+    }
+    pinned = _digest_lines(pinned_lines, "reference.toml [confinement] rendered")
+
+    problems = [f"`{k}` renders at argocd main but is not pinned in reference.toml" for k in sorted(live.keys() - pinned.keys())]
+    problems += [
+        f"`{k}` is pinned in reference.toml but argocd main no longer renders it" for k in sorted(pinned.keys() - live.keys())
+    ]
+    problems += [
+        f"`{k}` changed at argocd main ({pinned[k][:12]} pinned, {live[k][:12]} rendered): its ports may have moved"
+        for k in sorted(live.keys() & pinned.keys()) if live[k] != pinned[k]
+    ]
+
+    rendered_hosts = set()
+    for key in live:
+        _group, kind, ns, name = key.split("/", 3)
+        for suffix in OPERATOR_SERVICES[kind]:
+            rendered_hosts.add(f"{name}{suffix}.{ns or namespace}.svc.cluster.local")
+    declared_hosts = set()
+    for entry in inventory:
+        host, sep, port = entry.rpartition(":")
+        if not sep or not host or not port.isdigit():
+            problems.append(f"inventory entry `{entry}` is not `host:port`")
+            continue
+        declared_hosts.add(host)
+    problems += [
+        f"argocd main renders Service `{h}` but the inventory has no entry for it" for h in sorted(rendered_hosts - declared_hosts)
+    ]
+    problems += [
+        f"the inventory names `{h}` but argocd main renders no such Service" for h in sorted(declared_hosts - rendered_hosts)
+    ]
+    if problems:
+        raise Red(
+            "the C-18 inventory in reference.toml is not what argocd main renders; re-measure "
+            "(`kubectl -n yadgar get svc`), correct `inventory` and the targets, and re-pin "
+            "`rendered`: " + "; ".join(problems)
+        )
 
 
 # ── GitHub ──────────────────────────────────────────────────────────────────
@@ -490,12 +590,15 @@ class Inputs:
     estate_branch: str
     recertify: bool = False
     now: datetime | None = None
+    # `reference.toml`'s bytes; None reads the checkout's own file.
+    reference: bytes | None = None
 
 
 def decide(public: GitHub, verify: GitHub, estate: GitHub, inp: Inputs) -> Decision:
     head = public.json(f"/repos/{ARGOCD}/branches/main")["commit"]["sha"]
     now = {p: contents(public, p, head) for p in (TABLE_PATH, APP_PATH, PIN_PATH)}
     pin = check_consistency(now[APP_PATH], now[TABLE_PATH], now[PIN_PATH])
+    check_inventory(now[TABLE_PATH], now[APP_PATH], inp.reference if inp.reference is not None else REFERENCE_PATH.read_bytes())
     key = render_key(now[TABLE_PATH], now[APP_PATH])
     anchor, anchored_at, merged = find_anchor(public, head, now, key)
     epoch = f"{key}-{anchor}"
