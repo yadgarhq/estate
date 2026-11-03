@@ -161,10 +161,23 @@ connect_timeout_ms = 3000
 # this list. This list is DATA, not a test literal: a cluster service name in a
 # `.rs` file is the compiled-in dependency D80 refuses.
 #
-# WHAT THIS CHECK CANNOT SEE: a Service created after the measurement date. A
-# new Service is absent from this list until someone re-measures with
-# `kubectl -n yadgar get svc` and adds it, so re-measure on every new module or
-# broker and move the date.
+# THIS SAID "WHAT THIS CHECK CANNOT SEE: a Service created after the
+# measurement date". That is no longer true (yaadgaar #538): smoke's `verdict`
+# job (`scripts/verdict.py`, `check_inventory`) refuses unless this list's host
+# names are exactly the Services that argocd `main`'s committed render table
+# (`scripts/gates/yadgar_render.sha256`) names, each MariaDB CR counting as its
+# two operator Services `<name>` and `<name>-internal`. The table carries no
+# ports, so `rendered` below pins the table's line, digest and all, for every
+# Service and MariaDB CR: a port that moves changes its object's digest, and
+# the job goes red until someone re-measures, corrects this list and the
+# targets, re-pastes the lines and moves the date.
+#
+# WHAT IT STILL CANNOT SEE: a Service in `yadgar` that the `yadgar` Application
+# does not render — one another Application or an operator other than
+# mariadb-operator creates. Measured 2026-11-03: the only other Application
+# whose destination is `yadgar` is `tls` (`manifests/tls`), which renders no
+# Service. And the ports below are still a measurement: the digest says an
+# object changed, not to which port.
 #
 # PROVENANCE. The names and ports are the 2026-10-17 read-only measurement in
 # ledger 1243's body, checked against each chart's own Service template on
@@ -193,6 +206,36 @@ inventory = [
   "nats-headless.yadgar.svc.cluster.local:4222",
   "nats-headless.yadgar.svc.cluster.local:8222",
   "gateway.yadgar.svc.cluster.local:8080",
+]
+
+# THE RENDER THE INVENTORY WAS LAST CHECKED AGAINST: every `/Service//` and
+# `k8s.mariadb.com/MariaDB//` line of argocd's `scripts/gates/yadgar_render.sha256`,
+# copied verbatim (yaadgaar #538). Copied 2026-11-03 at argocd `a734235`, pin
+# 0.50.0, and re-derived that day by `helm template` of that pin with argocd's
+# `valuesObject` and the six `--api-versions` of argocd's render gate: all
+# thirteen digests reproduced, and the rendered ports are the inventory's
+# (`nats-headless` 4222 and 8222, `valkey` 6380 only, `nats` 4222, the logic
+# tiers 50052, the `-db` tiers 50051, `gateway` 8080; the MariaDB CRs set no
+# `spec.port`, so the operator's 3306). `check_inventory` refuses a line missing
+# here, a line here argocd no longer renders, and a line whose digest differs.
+#
+# `/Service//valkey` IS LAST ON PURPOSE. gitleaks' `generic-api-key` rule reads
+# `valkey",` followed by the next line's digest as a key assignment; with no
+# digest after it there is nothing to misread. Order does not matter to the check.
+rendered = [
+  "a1e3033465306b15522eb8259b8d756c5378bb7f1722ee3edc62239181c3e72c  /Service//gateway",
+  "1f9f9e9e22cce6ab3fafa55822a51d7f3fbf0c79371866313a380424eb91e359  /Service//iam",
+  "ad1e45f65a50af888903a5c6ce4add51b0baddd6f4a30acc691f82ecb91bbf02  /Service//iam-db",
+  "78665c04ff620977afb9b64d1e90c18f6b4b71126b8ce5942343d43f9d14f7f4  /Service//nats",
+  "36a93ec8c6aec4ddd2c66a3ede51dd645811e41b742410d2a3ac0927f50423d7  /Service//nats-headless",
+  "37b34bd4254c4249ae58f7afeb4a9c51cd2d277478e1a6a72d4422c22226f0eb  /Service//project",
+  "9051b47d38ba5cc92e43be6d0cd0df637225ab793cbc865dca4171f3568247f2  /Service//project-db",
+  "b6a308266b0728c2ee66b756faa5dfb72ceb0221b15a6fdfe4203d72057abc45  /Service//task",
+  "bb2597e266174ea753036e724588c9b1a98e1d0bc571d8a532b54be1e1589f29  /Service//task-db",
+  "5771d514dca8963cbd78d7686b74f5f211643d165414968f05090ca174d3a8c0  k8s.mariadb.com/MariaDB//iam-db-mariadb",
+  "b217dc00fcd1433cae1dba002cd3c86185eb0e8eac3e73f438b3f2a8f42663dd  k8s.mariadb.com/MariaDB//project-db-mariadb",
+  "862242fa0a97edf947e0891c6488cd6a95428876755516c05bbb6a215904d07d  k8s.mariadb.com/MariaDB//task-db-mariadb",
+  "a904e7939bb198a2bb305d3ab7a7655d9501ab3cadddd686108e1ed9ad663a4f  /Service//valkey",
 ]
 
 # EXCLUDED, AND THE RULE THAT DECIDES IT: an entry is excluded only when a

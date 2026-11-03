@@ -14,7 +14,7 @@ import pytest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from conftest import ESTATE_ID, FORK_ID, OWN_TOKEN, SHA_D41, VERIFY_ID, VERIFY_TOKEN, run, verdict_zip
+from conftest import d41_reference, ESTATE_ID, FORK_ID, OWN_TOKEN, SHA_D41, VERIFY_ID, VERIFY_TOKEN, run, verdict_zip
 from test_verdict_key import K_D41C07F
 
 import verdict
@@ -186,8 +186,12 @@ def test_an_unknown_token_probe_is_red():
         verdict.choose_token("admin", {})
 
 
-def test_main_writes_outputs_and_fails_closed(world, tmp_path):
+def test_main_writes_outputs_and_fails_closed(world, tmp_path, monkeypatch):
     out, summary = tmp_path / "out", tmp_path / "summary"
+    # The world is argocd at d41c07f; `main` reads `REFERENCE_PATH`, so point it
+    # at the committed inventory with d41c07f's render lines (`d41_reference`).
+    (tmp_path / "reference.toml").write_bytes(d41_reference())
+    monkeypatch.setattr(verdict, "REFERENCE_PATH", tmp_path / "reference.toml")
     env = {
         "GITHUB_REPOSITORY": "yadgarhq/estate", "GITHUB_REPOSITORY_ID": str(ESTATE_ID),
         "GITHUB_TOKEN": OWN_TOKEN, "VERDICT_TOKEN": "", "GITHUB_OUTPUT": str(out),
