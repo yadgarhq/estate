@@ -303,6 +303,13 @@ jobs:
               echo "C-18 did NOT run: an earlier step failed or the run was cancelled — the"
               echo "checkout or toolchain, the front-door contracts, or the 30-minute"
               echo "timeout. This says nothing about confinement."
+              if [ "$INVENTORY" != ok ]; then
+                echo ""
+                echo "INVENTORY DRIFT is ALSO standing: the inventory is '${INVENTORY:-missing}',"
+                echo "not 'ok', so reference.toml is not what argocd main renders (the"
+                echo "verdict job's summary names how). C-18 would have been red on it"
+                echo "regardless. No certificate is written; re-measure and re-pin."
+              fi
               exit 0
             fi
             echo "This row has only ever been observed green: nineteen runs at 18.02s, six"

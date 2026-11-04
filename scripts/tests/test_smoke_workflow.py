@@ -233,6 +233,47 @@ def test_the_c18_step_is_red_on_anything_but_a_clean_inventory(tmp_path, invento
     assert "::error" in out and "C-18 inventory" in out
 
 
+def summary_step():
+    return next(s for s in JOBS["smoke"]["steps"] if s.get("name") == "say what C-18 answered, on the run")
+
+
+def run_summary(tmp_path, outcome, inventory):
+    """Run the C-18 summary step's own shell and return what it wrote to the run summary."""
+    out = tmp_path / "summary.md"
+    step = summary_step()
+    assert step["env"]["INVENTORY"] == "${{ needs.verdict.outputs.inventory }}"
+    assert step["env"]["OUTCOME"] == "${{ steps.confinement.outcome }}"
+    bash = shutil.which("bash")
+    assert bash, "the test needs bash, as the runner's `run:` shell is"
+    env = {"PATH": "", "OUTCOME": outcome, "INVENTORY": inventory, "GITHUB_STEP_SUMMARY": str(out)}
+    done = subprocess.run([bash, "-c", step["run"]], env=env, capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    return out.read_text()
+
+
+@pytest.mark.parametrize("outcome", ["skipped", "cancelled"])
+@pytest.mark.parametrize("inventory", ["drift", "", "unknown"])
+def test_a_c18_that_did_not_run_still_names_the_drift(tmp_path, outcome, inventory):
+    """Drift plus a front-door failure skips the C-18 step, so its own drift error
+    never prints. The summary must say the inventory was not `ok` (yaadgaar #559
+    item 5); anything but `ok` counts, as the step's own gate does."""
+    text = run_summary(tmp_path, outcome, inventory)
+    assert "C-18 did NOT run" in text
+    assert "INVENTORY DRIFT" in text and "reference.toml" in text
+
+
+@pytest.mark.parametrize("outcome", ["skipped", "cancelled"])
+def test_a_c18_that_did_not_run_on_a_clean_inventory_names_no_drift(tmp_path, outcome):
+    text = run_summary(tmp_path, outcome, "ok")
+    assert "C-18 did NOT run" in text
+    assert "DRIFT" not in text.upper()
+
+
+def test_a_c18_red_on_drift_keeps_its_own_drift_text(tmp_path):
+    text = run_summary(tmp_path, "failure", "drift")
+    assert "RED ON INVENTORY DRIFT" in text
+
+
 def test_drift_does_not_stop_the_front_door_rows():
     front = next(s for s in JOBS["smoke"]["steps"] if s.get("name") == "the front-door contracts")
     assert "if" not in front and "inventory" not in str(front)
