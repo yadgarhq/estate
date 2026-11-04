@@ -20,6 +20,8 @@ THREE OUTCOMES, kept apart on purpose:
     (401/403/404, never "waiting", or smoke goes silent when the token
     expires), an empty token, a consistency mismatch on argocd `main`, a
     verdict whose `A` matches but whose `K` does not, a malformed verdict,
+    an Application whose values nest without end (a self-referencing YAML
+    alias, yaadgaar #559),
     estate's own token unable to list its `smoke-certified-` artifacts, an
     inventory input that cannot be read (before any token is used), or
     C-18's inventory drift on any outcome that would run no rows.
@@ -149,9 +151,22 @@ def _refuse_unencodable(node, where: str) -> None:
         )
 
 
+def _endless(where: str) -> Red:
+    """yaadgaar #559: a self-referencing YAML alias (`a: &x [*x]`) loads as a
+    node that contains itself, and walking it raises RecursionError. The class
+    only, as in `audit.load_mapping`: the message must not quote the value."""
+    return Red(
+        f"{where} nests without end (RecursionError): a self-referencing YAML alias "
+        "or runaway nesting in argocd; refused"
+    )
+
+
 def canonical(source) -> bytes:
     """The pinned encoding argocd's gate uses. Change both or neither."""
-    _refuse_unencodable(source, "")
+    try:
+        _refuse_unencodable(source, "")
+    except RecursionError:
+        raise _endless("spec.source") from None
     return json.dumps(
         source, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode("ascii")
@@ -280,7 +295,13 @@ def mariadb_extra_services(app_bytes: bytes) -> list[str]:
     for where, tree in trees:
         for module, body in (tree or {}).items() if isinstance(tree, dict) else ():
             db = body.get("database") if isinstance(body, dict) else None
-            for key in sorted(_keys_under(db, OPERATOR_EXTRA_KEYS)):
+            try:
+                keys = _keys_under(db, OPERATOR_EXTRA_KEYS)
+            except RecursionError:
+                # A refusal, not a returned problem: drift still runs the rows
+                # (ruling (b)), and nothing else would stop a loop in `values`.
+                raise _endless(f"spec.source.helm.{where}") from None
+            for key in sorted(keys):
                 problems.append(
                     f"`{module}.database` sets `{key}` in spec.source.helm.{where}: mariadb-operator then "
                     "creates `-primary`/`-secondary`/`-metrics` Services the inventory does not count"
@@ -791,8 +812,13 @@ def main(env: dict | None = None, transport: Transport = http_transport) -> int:
             GitHub(transport, own, "estate's own artifact listing (needs actions: read)"),
             inp,
         )
-    except (Red, KeyError, ValueError, TypeError, AttributeError) as err:
-        msg = str(err) if isinstance(err, Red) else f"an input or an API answer has an unexpected shape: {err!r}"
+    except (Red, KeyError, ValueError, TypeError, AttributeError, RecursionError) as err:
+        if isinstance(err, Red):
+            msg = str(err)
+        elif isinstance(err, RecursionError):
+            msg = "an input nests without end (RecursionError)"
+        else:
+            msg = f"an input or an API answer has an unexpected shape: {err!r}"
         print(f"::error title=verdict refused::{msg}")
         _emit(env, False, "", "", f"**REFUSED** — {msg}")
         return 1
