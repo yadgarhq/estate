@@ -21,7 +21,7 @@
 //! the message before reading the row.
 
 use anyhow::Result;
-use estate_front::{find_listed, listing_args, Identity, Suite, LISTING_PAGE_CAP};
+use estate_front::{ensure_listed, listing_args, Identity, Suite};
 use estate_harness::client::Edge;
 use estate_harness::{auth, mcp, pair_equal};
 use serde_json::json;
@@ -471,8 +471,9 @@ async fn c13_the_mcp_baseline_answers_as_the_revision_defines() -> Result<()> {
 /// come from ONE counter for all runs now, so the by-number read can only be
 /// trusted because the title it must return carries this run's marker — a read
 /// that answered some earlier run's task would fail the title comparison rather
-/// than pass on a coincidence. The listing is walked page by page, because
-/// task-db lists oldest first and this run's task is on the last page.
+/// than pass on a coincidence. The listing reads one bounded page that starts just
+/// below this run's id, because task-db lists oldest first and a walk from
+/// the first page would grow with every run (yaadgaar 269).
 #[tokio::test]
 #[ignore = "dials the reference cluster edge; run via `cargo test --test smoke -- --ignored`"]
 async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
@@ -523,15 +524,12 @@ async fn c10_a_task_round_trips_through_the_whole_spine() -> Result<()> {
     );
 
     // THE PROJECT IS SHARED BY EVERY RUN (ledger 1244), and task-db lists
-    // oldest first, so the task just created is on the LAST page. Walk them.
-    find_listed(&id, LISTING_PAGE_CAP, |token| {
-        let args = listing_args(token);
-        let caller = &caller;
-        let edge = &suite.edge;
-        async move { mcp::structured(&mcp::tools_call(edge, r, caller, "find_tasks", args).await?) }
-    })
-    .await
-    .map_err(|e| {
+    // oldest first, so the task just created is on the LAST page. Read the one
+    // page that starts just below its id (yaadgaar 269), not every page before.
+    let page = mcp::structured(
+        &mcp::tools_call(&suite.edge, r, &caller, "find_tasks", listing_args(&id)?).await?,
+    )?;
+    ensure_listed(&id, &page).map_err(|e| {
         anyhow::anyhow!(
             "C-10: find_tasks in {} did not list the task it just created — {e}",
             suite.project

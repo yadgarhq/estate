@@ -114,70 +114,60 @@ impl Suite {
     }
 }
 
-/// The page size a listing row asks for: task-db's `MAX_PAGE`, so the walk
-/// below takes as few round trips as the store allows. A larger value is
-/// clamped by task-db, never refused, so this cannot break a row.
-pub const LISTING_PAGE_SIZE: u32 = 500;
+/// The page size a listing row asks for. Sixteen is the most ids that can sort
+/// between [`listing_token`] and the id it looks for: they share every
+/// character but the last, and the last is one hex digit. A larger value would
+/// only let the page grow with other runs' tasks.
+pub const LISTING_PAGE_SIZE: u32 = 16;
 
-/// The most pages a listing row reads before it gives up. At
-/// [`LISTING_PAGE_SIZE`] that is 100,000 visible tasks; a run adds two.
-pub const LISTING_PAGE_CAP: usize = 200;
-
-/// The `find_tasks` arguments for one page of a listing walk: the page size,
-/// and the previous page's token when there is one. The key names are the
-/// gateway's schema; a misspelled one is ignored there, not refused.
-pub fn listing_args(token: Option<String>) -> serde_json::Value {
-    let mut args = serde_json::json!({ "page_size": LISTING_PAGE_SIZE });
-    if let Some(t) = token {
-        args["page_token"] = serde_json::json!(t);
-    }
-    args
+/// The `page_token` that starts a listing page just BELOW `id`: the id with its
+/// last character cut off.
+///
+/// **WHY A DERIVED TOKEN, AND NOT A WALK (yaadgaar 269).** task-db lists in
+/// `ORDER BY id` with `id > token` (`task-db/src/read.rs`, keyset paging), and
+/// the project is shared by every run, so a task created now is on the LAST
+/// page. The row used to read every page from the first, and its cost grew by
+/// the two tasks each run leaves behind, for ever. The token is an opaque string
+/// to the gateway (`gateway/src/tools/find.rs` passes it through) and a plain
+/// bound to task-db, so a bound derived from the id reads the one page the id
+/// is on, however many tasks lie before it. A prefix always sorts below the
+/// string it prefixes, so the id is never skipped.
+///
+/// No delete right is needed, and the tasks stay: this bounds the READ.
+pub fn listing_token(id: &str) -> Result<String> {
+    let mut cut = id.chars();
+    anyhow::ensure!(
+        cut.next_back().is_some(),
+        "an empty task id has no listing token"
+    );
+    Ok(cut.as_str().to_string())
 }
 
-/// Walk `find_tasks` pages until a task with `id` is listed, and return the
-/// 1-based page it was on.
+/// The `find_tasks` arguments for the one bounded page that must list `id`.
+/// The key names are the gateway's schema; a misspelled one is ignored there,
+/// not refused.
+pub fn listing_args(id: &str) -> Result<serde_json::Value> {
+    Ok(serde_json::json!({
+        "page_size": LISTING_PAGE_SIZE,
+        "page_token": listing_token(id)?,
+    }))
+}
+
+/// Succeed if the `find_tasks` answer lists a task with `id`.
 ///
-/// **WHY A WALK, AND NOT ONE PAGE (ledger 1244).** task-db lists in
-/// `ORDER BY id` — UUIDv7, so OLDEST first — and the project is now shared by
-/// every run. A task created now is therefore on the LAST page once earlier
-/// runs have filled the first; a row that read one page would turn red after
-/// about twenty-five runs having found no defect at all. (The gateway's tool
-/// catalogue says "newest first"; task-db's query says otherwise, and the
-/// query is what answers.)
-///
-/// `fetch` is handed `None` for the first page and the previous page's
-/// `next_page_token` after that. An empty token ends the walk. The walk is
-/// bounded by `cap`, so a store that never stops handing out tokens ends the
-/// row red with the cap named rather than hanging it, and a token answered
-/// back unchanged ends it at once as a loop.
-pub async fn find_listed<F, Fut>(id: &str, cap: usize, mut fetch: F) -> Result<usize>
-where
-    F: FnMut(Option<String>) -> Fut,
-    Fut: std::future::Future<Output = Result<serde_json::Value>>,
-{
-    let mut token: Option<String> = None;
-    for page in 1..=cap {
-        let answer = fetch(token.clone()).await?;
-        let tasks = answer["tasks"].as_array().with_context(|| {
-            format!("find_tasks page {page} carried no `tasks` array: {answer}")
-        })?;
-        if tasks.iter().any(|t| t["id"] == serde_json::json!(id)) {
-            return Ok(page);
-        }
-        match answer["next_page_token"].as_str() {
-            // A LOOP, NOT A LONG LISTING. Keyset paging moves the token on
-            // every page; one answered back unchanged would be read again and
-            // again until the cap, and the row would blame the cap.
-            Some(next) if token.as_deref() == Some(next) => anyhow::bail!(
-                "find_tasks answered page {} with the same next_page_token it was handed \
-                 ({next}); the listing is looping",
-                page
-            ),
-            Some(next) if !next.is_empty() => token = Some(next.to_string()),
-            _ => anyhow::bail!("{id} is on none of the {page} page(s) find_tasks listed"),
-        }
-    }
-    anyhow::bail!("{id} was not found before the cap of {cap} pages")
+/// **FAIL-CLOSED.** An answer without the id is an error, with no fallback walk:
+/// a store that stopped honouring the token (an opaque or validated one, a
+/// changed sort) must turn the row red, not be hidden by a slow second try.
+pub fn ensure_listed(id: &str, answer: &serde_json::Value) -> Result<()> {
+    let tasks = answer["tasks"]
+        .as_array()
+        .with_context(|| format!("find_tasks carried no `tasks` array: {answer}"))?;
+    anyhow::ensure!(
+        tasks.iter().any(|t| t["id"] == serde_json::json!(id)),
+        "{id} is not on the {} task(s) the bounded page listed",
+        tasks.len()
+    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -185,96 +175,87 @@ mod tests {
     use super::*;
     use serde_json::{json, Value};
 
-    /// A fake store: each page is what `find_tasks` would answer for the token
-    /// that names it. The first page answers the absent token.
-    fn pages<'a>(
-        spec: &'a [(&'a [&'a str], &'a str)],
-    ) -> impl FnMut(Option<String>) -> std::future::Ready<Result<Value>> + 'a {
-        move |token: Option<String>| {
-            let i = match token {
-                None => 0,
-                Some(t) => {
-                    spec.iter()
-                        .position(|(ids, _)| ids.last() == Some(&t.as_str()))
-                        .expect("a token the fake handed out")
-                        + 1
-                }
-            };
-            let (ids, next) = spec[i];
-            let tasks: Vec<Value> = ids.iter().map(|id| json!({ "id": id })).collect();
-            std::future::ready(Ok(json!({ "tasks": tasks, "next_page_token": next })))
-        }
+    const ID: &str = "yadgar:task:01a1640d-6e8a-74ca-91bb-abca6faea485";
+
+    /// A task as `find_tasks` lists it.
+    fn row(id: &str) -> Value {
+        json!({ "id": id })
     }
 
-    #[tokio::test]
-    async fn a_task_on_the_first_page_is_found_on_page_one() {
-        let spec: &[(&[&str], &str)] = &[(&["a", "b"], "")];
-        assert_eq!(find_listed("b", 5, pages(spec)).await.unwrap(), 1);
+    /// THE WHOLE POINT (yaadgaar 269). The listing row reads ONE bounded page,
+    /// whose start is derived from the id it is looking for, so its cost does
+    /// not grow with the two tasks every run leaves behind.
+    #[test]
+    fn the_token_is_the_id_without_its_last_character() {
+        assert_eq!(
+            listing_token(ID).unwrap(),
+            "yadgar:task:01a1640d-6e8a-74ca-91bb-abca6faea48"
+        );
     }
 
-    /// THE CASE THE SHARED PROJECT CREATES. `find_tasks` answers oldest first,
-    /// so a task created now sits on the LAST page once older runs fill the
-    /// first. A walk that stopped at page one would call it missing.
-    #[tokio::test]
-    async fn a_task_past_the_first_page_is_found_by_following_the_token() {
-        let spec: &[(&[&str], &str)] = &[(&["a", "b"], "b"), (&["c", "d"], "d"), (&["e"], "")];
-        assert_eq!(find_listed("e", 5, pages(spec)).await.unwrap(), 3);
+    /// `ORDER BY id` with `id > token` returns the token's successors, so the
+    /// token must sort BELOW the id or the id is skipped. A prefix always does.
+    #[test]
+    fn the_token_sorts_below_the_id() {
+        assert!(listing_token(ID).unwrap().as_str() < ID);
     }
 
-    #[tokio::test]
-    async fn a_task_on_no_page_is_an_error_naming_how_many_pages_were_read() {
-        let spec: &[(&[&str], &str)] = &[(&["a"], "a"), (&["b"], "")];
-        let e = find_listed("z", 5, pages(spec))
-            .await
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("2 page"), "{e}");
-    }
-
-    /// The walk is bounded. A store that hands out a next token for ever must
-    /// end the row red with the cap named, not hang it until the job times out.
-    #[tokio::test]
-    async fn the_walk_stops_at_the_cap_and_says_so() {
-        let spec: &[(&[&str], &str)] = &[(&["a"], "a"), (&["b"], "b"), (&["c"], "c"), (&["d"], "")];
-        let e = find_listed("d", 2, pages(spec))
-            .await
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("cap of 2"), "{e}");
-    }
-
-    /// A page with no `tasks` array is a malformed answer, not an empty one.
-    #[tokio::test]
-    async fn a_page_without_a_tasks_array_is_an_error() {
-        let fetch = |_: Option<String>| std::future::ready(Ok(json!({ "nope": [] })));
-        assert!(find_listed("a", 5, fetch).await.is_err());
-    }
-
-    /// A store that answers the same `next_page_token` it was handed is looping,
-    /// and the walk says so at once instead of spending the whole cap on it.
-    #[tokio::test]
-    async fn a_repeated_token_ends_the_walk_as_a_loop() {
-        let fetch = |_: Option<String>| {
-            std::future::ready(Ok(json!({ "tasks": [], "next_page_token": "t" })))
-        };
-        let e = find_listed("a", 50, fetch).await.unwrap_err().to_string();
-        assert!(e.contains("same next_page_token"), "{e}");
-        assert!(e.contains("page 2"), "{e}");
+    /// An empty id has no prefix: refuse it rather than ask for the first page,
+    /// which would pass or fail on whatever the oldest task is.
+    #[test]
+    fn an_empty_id_has_no_token() {
+        assert!(listing_token("").is_err());
     }
 
     /// The key names are the gateway's `find_tasks` schema
-    /// (`gateway/src/tools.rs`): `page_size` and `page_token`. A misspelled key
-    /// is silently ignored there, so C-10 would read default-size first pages
-    /// for ever and still look like it walked.
+    /// (`gateway/src/tools/find.rs`): `page_size` and `page_token`. A misspelled
+    /// key is silently ignored there, so the row would read the default first
+    /// page for ever and look as though it had looked.
     #[test]
     fn the_listing_arguments_use_the_gateways_key_names() {
         assert_eq!(
-            listing_args(None),
-            json!({ "page_size": LISTING_PAGE_SIZE })
+            listing_args(ID).unwrap(),
+            json!({
+                "page_size": LISTING_PAGE_SIZE,
+                "page_token": "yadgar:task:01a1640d-6e8a-74ca-91bb-abca6faea48",
+            })
         );
-        assert_eq!(
-            listing_args(Some("yadgar:task:x".into())),
-            json!({ "page_size": LISTING_PAGE_SIZE, "page_token": "yadgar:task:x" })
-        );
+    }
+
+    /// The page must be wide enough for every id that can sort between the
+    /// token and the id: they share all but the last character, so there are at
+    /// most sixteen hex digits of them, the id among them.
+    #[test]
+    fn the_page_holds_every_sibling_the_last_character_can_make() {
+        const { assert!(LISTING_PAGE_SIZE >= 16) };
+    }
+
+    #[test]
+    fn a_page_that_lists_the_id_passes() {
+        let answer = json!({ "tasks": [row("yadgar:task:x0"), row(ID)], "next_page_token": "" });
+        assert!(ensure_listed(ID, &answer).is_ok());
+    }
+
+    /// A page without the id is red, with the id named. No fallback walk: a
+    /// token the store stopped honouring must not be hidden by one.
+    #[test]
+    fn a_page_without_the_id_is_an_error_naming_it() {
+        let answer = json!({ "tasks": [row("yadgar:task:other")], "next_page_token": "" });
+        let e = ensure_listed(ID, &answer).unwrap_err().to_string();
+        assert!(e.contains(ID), "{e}");
+    }
+
+    #[test]
+    fn an_empty_page_is_an_error() {
+        let answer = json!({ "tasks": [], "next_page_token": "" });
+        assert!(ensure_listed(ID, &answer).is_err());
+    }
+
+    /// A page with no `tasks` array is a malformed answer, not an empty one.
+    #[test]
+    fn a_page_without_a_tasks_array_is_an_error() {
+        let answer = json!({ "nope": [] });
+        let e = ensure_listed(ID, &answer).unwrap_err().to_string();
+        assert!(e.contains("tasks"), "{e}");
     }
 }
