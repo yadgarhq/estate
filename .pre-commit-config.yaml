@@ -17,7 +17,9 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: check-merge-conflict
+        args: [--assume-in-merge]
       - id: check-added-large-files
+        args: [--enforce-all]
       - id: check-yaml
         # Kubernetes manifests are multi-document by convention — a Namespace and
         # the policy that governs it belong in one file, read by one `kubectl
