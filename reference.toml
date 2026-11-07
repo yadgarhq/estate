@@ -215,8 +215,10 @@ inventory = [
 
 # THE RENDER THE INVENTORY WAS LAST CHECKED AGAINST: every `/Service//` and
 # `k8s.mariadb.com/MariaDB//` line of argocd's `scripts/gates/yadgar_render.sha256`,
-# copied verbatim (yaadgaar #538). Copied 2026-11-03 at argocd `a734235`, pin
-# 0.50.0, and re-derived that day by `helm template` of that pin with argocd's
+# copied verbatim (yaadgaar #538). Re-pinned 2026-11-07 for pin 0.51.117 (the
+# argocd hand-pin head `f167a24`): only `/Service//gateway` moved, by gateway#183's
+# `Prune=false` annotation; its ports did not change. First copied 2026-11-03 at
+# argocd `a734235`, pin 0.50.0, and re-derived that day by `helm template` of that pin with argocd's
 # `valuesObject` and the six `--api-versions` of argocd's render gate: all
 # thirteen digests reproduced, and the rendered ports are the inventory's
 # (`nats-headless` 4222 and 8222, `valkey` 6380 only, `nats` 4222, the logic
@@ -228,7 +230,7 @@ inventory = [
 # `valkey",` followed by the next line's digest as a key assignment; with no
 # digest after it there is nothing to misread. Order does not matter to the check.
 rendered = [
-  "a1e3033465306b15522eb8259b8d756c5378bb7f1722ee3edc62239181c3e72c  /Service//gateway",
+  "d405ae4f8f1c5258249825d47b70d8ae8391a2fc10725fd8a745682b8fc92930  /Service//gateway",
   "1f9f9e9e22cce6ab3fafa55822a51d7f3fbf0c79371866313a380424eb91e359  /Service//iam",
   "ad1e45f65a50af888903a5c6ce4add51b0baddd6f4a30acc691f82ecb91bbf02  /Service//iam-db",
   "78665c04ff620977afb9b64d1e90c18f6b4b71126b8ce5942343d43f9d14f7f4  /Service//nats",

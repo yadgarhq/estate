@@ -70,7 +70,7 @@ spec:
     # stamps this line, `kind/application.yaml`'s and the `platform` pin of
     # `operators-application.yaml` in the commit each tag points at (ADR-0820),
     # so each tag's examples pin that tag. In your copy, you move it.
-    targetRevision: 0.50.0
+    targetRevision: 0.51.117
     helm:
       valuesObject:
         # THIS ORGANISATION'S VALUES FOR THE PARENT CHART, READ BY infra/yadgar-app.yaml

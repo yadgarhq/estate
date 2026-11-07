@@ -20,13 +20,14 @@ from test_verdict_key import K_D41C07F
 
 import verdict
 
-# argocd main when the pin was last copied: pin 0.50.0, the table and the
-# Application fetched 2026-11-03. The decision-table world stays at d41c07f,
-# where the frozen key vectors live; `conftest.run` hands it d41c07f's lines.
-SHA_A73 = "a734235ba0d551f4a9bd41bf89acd17997cbd3b7"
-A73 = FIXTURES / SHA_A73
-TABLE = (A73 / "yadgar_render.sha256").read_bytes()
-APP = (A73 / "yadgar.yaml").read_bytes()
+# argocd when the pin was last copied: pin 0.51.117, the table and the
+# Application of the hand-pin PR head f167a24 (argocd, supersedes #259), copied
+# 2026-11-07. The decision-table world stays at d41c07f, where the frozen key
+# vectors live; `conftest.run` hands it d41c07f's lines.
+SHA_F16 = "f167a24f685825fcfcdbd697d3826487a1d82985"
+F16 = FIXTURES / SHA_F16
+TABLE = (F16 / "yadgar_render.sha256").read_bytes()
+APP = (F16 / "yadgar.yaml").read_bytes()
 REFERENCE = verdict.REFERENCE_PATH.read_bytes()
 REAL = verdict.tomllib.loads(REFERENCE.decode())["confinement"]
 HOST = ".yadgar.svc.cluster.local"
