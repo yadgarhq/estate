@@ -202,7 +202,7 @@ jobs:
         with:
           # ADR-1118: one org-wide Rust, pinned. Keep equal to rust-toolchain.toml
           # (the action takes a literal and cannot read that file).
-          toolchain: 1.99.1
+          toolchain: 1.100.0
 
       # THE `verdict` JOB ALREADY ESTABLISHED that the estate settled on the
       # current render. (An `await-roll` step stood here for `repository_dispatch`
