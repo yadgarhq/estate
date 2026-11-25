@@ -64,6 +64,27 @@ disabled, not named in `classes.json` `sweep.exclude`. `classes.json` `exempt`
 (the producer `actions`) is exempt from P2 only. The auditor includes ITSELF:
 this repository is a consumer like any other (ADR-0561).
 
+`classes.json` `hook_exempt` exempts ONE hook id for ONE repository from P2
+(ruling, Max 2026-11-25; yaadgaar 707). Its shape is `{repository: {hook id:
+reason}}`. An applied exemption removes that id from the repository's missing
+hooks only: the repository still counts in its class's 80% threshold, so the
+other members are judged as before. The report names every applied exemption
+with its reason. An entry is a P2 finding and is not applied when:
+  - it names a repository P2 does not judge (absent, outside the sweep, or in
+    `exempt`);
+  - its reason is empty: nothing is left but whitespace after the forbidden
+    characters are removed;
+  - its reason holds a forbidden character: any character whose Unicode
+    category is C* (Cc, Cf, Co, Cn, Cs: C0, DEL, C1 such as NEL, bidi
+    overrides, zero-width space, private use, unassigned, surrogates), Zl
+    (LINE SEPARATOR) or Zp (PARAGRAPH SEPARATOR);
+  - the repository carries the hook (stale);
+  - the repository's class does not require the hook (unneeded; a typo'd id
+    lands here).
+A value of any other shape, including a hook id that is empty or holds a
+forbidden character, is one P2 finding and applies nothing. An absent key, or
+`{}`, changes nothing.
+
 Commands:
 
     audit.py gather --owner O --out snapshot.json      read GitHub, write facts
@@ -100,6 +121,7 @@ import secrets
 import subprocess
 import sys
 import tomllib
+import unicodedata
 import urllib.parse
 
 import yaml
@@ -399,13 +421,69 @@ def required(members):
     return {i: c for i, c in counts.items() if c * den >= n * num}
 
 
+def _forbidden(ch):
+    """Invisible or line-breaking: Unicode category C* (Cc, Cf, Co, Cn, Cs), Zl or Zp."""
+    cat = unicodedata.category(ch)
+    return cat.startswith("C") or cat in ("Zl", "Zp")
+
+
+def _has_forbidden(text):
+    return any(_forbidden(ch) for ch in text)
+
+
+def _well_formed(value):
+    """`classes.json` `hook_exempt` is `{repository: {hook id: reason}}` (JSON keys are strings)."""
+    return isinstance(value, dict) and all(
+        isinstance(hooks, dict) and all(
+            isinstance(hook, str) and hook and not _has_forbidden(hook) and isinstance(why, str)
+            for hook, why in hooks.items())
+        for name, hooks in value.items())
+
+
+def hook_exemptions(value, judged, members):
+    """`(findings, applied)` for `classes.json` `hook_exempt`.
+
+    `judged` names every swept, non-exempt repository; `members` maps each
+    class member to `(class, its hook ids, its class's required ids)`.
+    `applied` is `{repo: {hook id: reason}}`.
+    """
+    if not _well_formed(value):
+        return [finding("P2", "(estate)", "`hook_exempt` is not a mapping of repository to "
+                                          "{hook id: reason}; no exemption applied")], {}
+    findings, applied = [], {}
+    for name, hooks in sorted(value.items()):
+        if name not in judged:
+            findings.append(finding("P2", "(estate)", f"`hook_exempt` names `{name}`, "
+                                                      "a repository P2 does not judge"))
+            continue
+        if name not in members:
+            continue  # no class or an unparsable config: its own P2 finding stands
+        cls, ids, req = members[name]
+        for hook, why in sorted(hooks.items()):
+            if not "".join(ch for ch in why if not _forbidden(ch)).strip():
+                findings.append(finding("P2", name, f"`hook_exempt` `{hook}` has an empty reason"))
+            elif _has_forbidden(why):
+                findings.append(finding("P2", name, f"`hook_exempt` `{hook}` has a forbidden character "
+                                                    "in its reason (Unicode category C*, Zl or Zp)"))
+            elif hook in ids:
+                findings.append(finding("P2", name, f"`hook_exempt` `{hook}` is stale: `{name}` carries it"))
+            elif hook not in req:
+                findings.append(finding("P2", "(estate)", f"`hook_exempt` `{hook}` for `{name}` is unneeded: "
+                                                          f"class `{cls}` does not require it"))
+            else:
+                applied.setdefault(name, {})[hook] = why
+    return findings, applied
+
+
 def hook_conformance(snap):
-    """`(findings, classes)`. `classes` is class -> {members, required}."""
+    """`(findings, classes)`. `classes` is class -> {members, required, exempted}."""
     findings, members = [], {c: {} for c in CLASSES}
     exempt = snap["classes"].get("exempt", {})
+    judged = set()
     for repo in sorted(snap["repos"], key=lambda r: r["name"]):
         if not in_sweep(repo, snap["classes"]) or repo["name"] in exempt:
             continue
+        judged.add(repo["name"])
         cls, why = class_of(repo.get("topics") or [])
         if cls is None:
             findings.append(finding("P2", repo["name"], f"no class: {why}"))
@@ -421,12 +499,18 @@ def hook_conformance(snap):
         if repo.get("hooks") is None:
             findings.append(finding("P2", repo["name"], "no `.pre-commit-config.yaml`"))
         members[cls][repo["name"]] = repo.get("hooks") or []
+    reqs = {cls: required(members[cls]) for cls in CLASSES}
+    refused, applied = hook_exemptions(snap["classes"].get("hook_exempt", {}), judged,
+                                       {n: (cls, ids, reqs[cls]) for cls in CLASSES
+                                        for n, ids in members[cls].items()})
+    findings += refused
     out = {}
     for cls in CLASSES:
-        req = required(members[cls])
-        out[cls] = {"members": sorted(members[cls]), "required": req}
+        req = reqs[cls]
+        out[cls] = {"members": sorted(members[cls]), "required": req,
+                    "exempted": {n: applied[n] for n in sorted(members[cls]) if n in applied}}
         for name, ids in sorted(members[cls].items()):
-            missing = sorted(set(req) - set(ids))
+            missing = sorted(set(req) - set(ids) - set(applied.get(name, {})))
             if missing:
                 findings.append(finding("P2", name, f"{cls}: missing required {', '.join(f'`{m}`' for m in missing)}"))
     return findings, out
@@ -526,6 +610,11 @@ def report(snap, p3_doc=None):
     out += ["", f"Class map: an `{EXPLICIT_PREFIX}<class>` topic names the class outright; "
             "without one, `yadgar-deployable` -> deployable, then "
             + ", ".join(f"`{k}` -> {v}" for k, v in CLASS_MAP.items()) + "."]
+    exempted = sorted((n, h, why) for c in CLASSES for n, hooks in classes[c]["exempted"].items()
+                      for h, why in hooks.items())
+    if exempted:
+        out += ["", "Exempted by `classes.json` `hook_exempt` (not judged missing, still counted in the class):"]
+        out += [f"- `{n}` `{h}`: {why}" for n, h, why in exempted]
     out += p3_section(p3_doc) + ["", "## Findings", ""]
     out += [f"- {f['predicate']} `{f['repo']}`: {f['what']}" for f in p1 + p2 + p3] or ["- none"]
     return "\n".join(out) + "\n", 1 if red else 0
@@ -571,7 +660,9 @@ def gather(owner, get=gh_get):
         raise SystemExit(f"{owner}/{ACTIONS} has no classes.json; refused")
     classes = json.loads(classes_text)
     snap = {"owner": owner, "classes": {"exempt": classes.get("exempt", {}),
-                                        "sweep": {"exclude": classes.get("sweep", {}).get("exclude", {})}},
+                                        "sweep": {"exclude": classes.get("sweep", {}).get("exclude", {})},
+                                        # Verbatim: a malformed value is a P2 finding at `check`.
+                                        "hook_exempt": classes.get("hook_exempt", {})},
             "repos": [], "tags": {}}
     listing = paged(get, f"orgs/{owner}/repos?type=public")
     if listing is None:
